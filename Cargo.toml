@@ -1,0 +1,10 @@
+[package]
+name = "youtube-subscriptions"
+version = "0.1.0"
+authors = ["yazgoo <yazgoo@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+sxd-xpath = "0.4.2"
+sxd-document = "0.3.2"
+dirs = "2.0.1"
