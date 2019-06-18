@@ -1,6 +1,7 @@
 extern crate sxd_document;
 extern crate sxd_xpath;
 extern crate dirs;
+extern crate reqwest;
 
 use sxd_document::parser;
 use sxd_xpath::{evaluate_xpath, Value};
@@ -21,7 +22,40 @@ fn get_subscriptions_xml() -> Result<String, Error> {
     }
 }
 
-fn get_channels(xml: String) -> Vec<String> {
+#[derive(Debug)]
+struct Video {
+    channel: String,
+    title: String,
+    thumbnail: String,
+    url: String,
+    published: String,
+    description: String,
+}
+
+fn get_videos(channel_url: String) -> Vec<Video> {
+    match reqwest::get(channel_url.as_str()) {
+        Ok(mut result) => 
+            match result.text() {
+                Ok(contents) => {
+                    println!("{:?}", contents);
+                    vec![Video { 
+                        channel: "".to_string(),
+                        title: "".to_string(),
+                        thumbnail: "".to_string(),
+                        url: channel_url,
+                        published: "".to_string(),
+                        description: contents,
+                    }]
+                },
+                Err(_) =>
+                    vec![],
+            },
+        Err(_) =>
+            vec![],
+    }
+}
+
+fn get_channels(xml: String) -> Vec<Video> {
     let package = parser::parse(xml.as_str()).expect("failed to parse XML");
     let document = package.as_document();
     match evaluate_xpath(&document, "//outline/@xmlUrl") {
@@ -32,12 +66,14 @@ fn get_channels(xml: String) -> Vec<String> {
                         Some(attribute) => Some(attribute.value().to_string()),
                         None => None
                     }
+                ).flat_map( |url|
+                       get_videos(url)
                 ).collect()
             }
             else {
                 vec![]
             }
-        Err(e) =>
+        Err(_) =>
             vec![]
     }
     
