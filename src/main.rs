@@ -3,14 +3,22 @@ extern crate sxd_xpath;
 extern crate dirs;
 extern crate reqwest;
 extern crate serde_json;
+extern crate terminal_size;
+extern crate crossterm_input;
+
 
 use serde::{Serialize, Deserialize};
 use sxd_document::parser;
 use sxd_xpath::{evaluate_xpath, Value, Factory};
 use sxd_xpath::context::Context;
 use std::fs;
+use std::io;
+use std::io::{Read, Write};
 use std::io::Error;
 use sxd_document::dom::Element;
+use terminal_size::{Width, Height, terminal_size};
+use std::cmp::min;
+use crossterm_input::{input, RawScreen};
 
 fn get_subscriptions_xml() -> Result<String, Error> {
     match dirs::home_dir() {
@@ -131,7 +139,70 @@ fn get_videos(xml: String) -> Vec<Video> {
 
 fn to_show_videos(mut videos: Vec<Video>, start: usize, count: usize) -> Vec<Video> {
     videos.sort_by(|a, b| b.published.cmp(&a.published));
-    return videos[start..count].to_vec();
+    let mut result = videos[start..count].to_vec();
+    result.reverse();
+    return result;
+}
+
+fn get_lines() -> usize {
+    let size = terminal_size();
+    if let Some((Width(_), Height(h))) = size {
+        (h - 1) as usize
+    } else {
+        20
+    }
+}
+
+fn get_cols() -> usize {
+    let size = terminal_size();
+    if let Some((Width(w), Height(_))) = size {
+        w as usize
+    } else {
+        20
+    }
+}
+
+fn print_videos(toshow: Vec<Video>) {
+    let max = toshow.iter().fold(0, |acc, x| if x.channel.len() > acc { x.channel.len() } else { acc } );
+    let cols = get_cols();
+    for video in toshow {
+        let published = video.published.split("T").collect::<Vec<&str>>();
+        let whitespaces = " ".repeat(max - video.channel.len());
+        let s = format!("  {} {}{} {}", published[0][5..10].to_string(), video.channel, whitespaces, video.title);
+        println!("{}", s[0..min(s.len(), cols-4)].to_string())
+    }
+}
+
+fn hide_cursor() {
+    print!("\x1b[?25l");
+    io::stdout().flush().unwrap();
+}
+
+fn show_cursor() {
+    print!("\x1b[?25h");
+    io::stdout().flush().unwrap();
+}
+
+fn move_cursor(i: usize) {
+    print!("\x1b[{};0f", i);
+    io::stdout().flush().unwrap();
+}
+
+fn print_selector(i: usize) {
+    move_cursor(i);
+    print!("┃");
+    io::stdout().flush().unwrap();
+}
+
+fn clear_selector(i: usize) {
+    move_cursor(i);
+    print!(" ");
+    io::stdout().flush().unwrap();
+}
+
+fn jump(i: usize, new_i: usize) -> usize {
+    clear_selector(i);
+    return new_i;
 }
 
 fn main() {
@@ -145,8 +216,36 @@ fn main() {
             }
             match fs::read_to_string(path) {
                 Ok(s) => {
+                    let mut n = get_lines();
                     let deserialized: Videos = serde_json::from_str(s.as_str()).unwrap();
-                    println!("{:?}", to_show_videos(deserialized.videos, 0, 2));
+                    let mut i = 0;
+                    let mut toshow = to_show_videos(deserialized.videos, 0, n);
+                    print_videos(toshow);
+                    hide_cursor();
+                    let screen = RawScreen::into_raw_mode();
+                    while true {
+                        print_selector(i);
+                        let input = input();
+                        match input.read_char() {
+                            Ok(c) => {
+                                match c {
+                                    'q' => {
+                                        break;
+                                        show_cursor();
+                                    },
+                                    'j' | 'l' => i = jump(i, i + 1),
+                                    'k' | 'h' => i = jump(i, i - 1),
+                                    _ => ()
+                                }
+                            }
+                            Err(_) => (),
+                        }
+                        if i <= 0 {
+                            i = n - 1;
+                        } else {
+                            i = i % n;
+                        }
+                    }
                 },
                 Err(e) =>
                     println!("{}", e),
