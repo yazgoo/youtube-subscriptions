@@ -18,7 +18,9 @@ use std::io::Error;
 use sxd_document::dom::Element;
 use terminal_size::{Width, Height, terminal_size};
 use std::cmp::min;
+use std::process::{Command, Stdio};
 use crossterm_input::{input, RawScreen};
+use crossterm::{terminal, ClearType};
 
 fn get_subscriptions_xml() -> Result<String, Error> {
     match dirs::home_dir() {
@@ -137,7 +139,7 @@ fn get_videos(xml: String) -> Vec<Video> {
     
 }
 
-fn to_show_videos(mut videos: Vec<Video>, start: usize, count: usize) -> Vec<Video> {
+fn to_show_videos(videos: &mut Vec<Video>, start: usize, count: usize) -> Vec<Video> {
     videos.sort_by(|a, b| b.published.cmp(&a.published));
     let mut result = videos[start..count].to_vec();
     result.reverse();
@@ -162,20 +164,14 @@ fn get_cols() -> usize {
     }
 }
 
-fn print_videos(toshow: Vec<Video>) {
-    let max = toshow.iter().fold(0, |acc, x| if x.channel.len() > acc { x.channel.len() } else { acc } );
-    let cols = get_cols();
-    for video in toshow {
-        let published = video.published.split("T").collect::<Vec<&str>>();
-        let whitespaces = " ".repeat(max - video.channel.len());
-        let s = format!("  {} {}{} {}", published[0][5..10].to_string(), video.channel, whitespaces, video.title);
-        println!("{}", s[0..min(s.len(), cols-4)].to_string())
-    }
-}
-
 fn hide_cursor() {
     print!("\x1b[?25l");
     io::stdout().flush().unwrap();
+}
+
+fn clear() {
+    let terminal = terminal();
+    terminal.clear(ClearType::All);
 }
 
 fn show_cursor() {
@@ -184,7 +180,7 @@ fn show_cursor() {
 }
 
 fn move_cursor(i: usize) {
-    print!("\x1b[{};0f", i);
+    print!("\x1b[{};0f", i + 1);
     io::stdout().flush().unwrap();
 }
 
@@ -205,7 +201,78 @@ fn jump(i: usize, new_i: usize) -> usize {
     return new_i;
 }
 
-fn main() {
+struct YoutubeSubscribtions {
+    n: usize,
+    start: usize,
+    i: usize,
+    toshow: Vec<Video>,
+    videos: Videos
+}
+
+fn print_videos(toshow: &Vec<Video>) {
+    let max = toshow.iter().fold(0, |acc, x| if x.channel.len() > acc { x.channel.len() } else { acc } );
+    let cols = get_cols();
+    for video in toshow {
+        let published = video.published.split("T").collect::<Vec<&str>>();
+        let whitespaces = " ".repeat(max - video.channel.len());
+        let s = format!("  {} {}{} {}", published[0][5..10].to_string(), video.channel, whitespaces, video.title);
+        println!("{}", s[0..min(s.len(), cols-4)].to_string());
+    }
+}
+
+fn play(v: &Video) {
+    Command::new("/Applications/VLC.app/Contents/MacOS/VLC")
+        .arg("/tmp/ywBV6M7VOFU.mp4")
+        .stdout(Stdio::piped())
+        .spawn();
+}
+
+fn print_info(v: &Video) {
+    println!("{}", v.title);
+    println!("");
+    println!("from {}", v.channel);
+    println!("");
+    println!("{}", v.description);
+}
+
+impl YoutubeSubscribtions {
+
+    fn clear_and_print_videos(&mut self) {
+        clear();
+        print_videos(&self.toshow)
+    }
+
+    fn soft_reload(&mut self) {
+        self.n = get_lines();
+        self.start = 0;
+        self.toshow = to_show_videos(&mut self.videos.videos, self.start, self.start + self.n);
+        self.i = 0;
+        self.clear_and_print_videos()
+    }
+
+    fn first_page(&mut self) {
+        self.n = get_lines();
+        self.toshow = to_show_videos(&mut self.videos.videos, self.start, self.n);
+    }
+    fn play_current(&mut self) {
+        clear;
+        play(&self.toshow[self.i]);
+        clear;
+        self.soft_reload();
+    }
+    fn info(&mut self) {
+        clear;
+        let input = input();
+        println!("info");
+        print_info(&self.toshow[self.i]);
+        {
+            let screen = RawScreen::into_raw_mode();
+            input.read_char();
+        }
+        clear;
+        self.soft_reload();
+    }
+    fn run(&mut self) {
     match get_subscriptions_xml() {
         Ok(xml) => {
             let path = "/tmp/yts.json";
@@ -216,36 +283,45 @@ fn main() {
             }
             match fs::read_to_string(path) {
                 Ok(s) => {
-                    let mut n = get_lines();
-                    let deserialized: Videos = serde_json::from_str(s.as_str()).unwrap();
-                    let mut i = 0;
-                    let mut toshow = to_show_videos(deserialized.videos, 0, n);
-                    print_videos(toshow);
+                    self.videos = serde_json::from_str(s.as_str()).unwrap();
+                    self.start = 0;
+                    self.i = 0;
+                    self.first_page();
+                    self.clear_and_print_videos();
                     hide_cursor();
-                    let screen = RawScreen::into_raw_mode();
                     while true {
-                        print_selector(i);
+                        print_selector(self.i);
                         let input = input();
-                        match input.read_char() {
+                        let result;
+                        {
+                            let screen = RawScreen::into_raw_mode();
+                            result = input.read_char();
+                        }
+                        match result {
                             Ok(c) => {
                                 match c {
                                     'q' => {
-                                        break;
                                         show_cursor();
+                                        break;
                                     },
-                                    'j' | 'l' => i = jump(i, i + 1),
-                                    'k' | 'h' => i = jump(i, i - 1),
+                                    'j' | 'l' => self.i = jump(self.i, self.i + 1),
+
+                                    'k' | 'h' => 
+                                        self.i = jump(self.i, 
+                                                 if self.i > 0 { self.i - 1 } else { self.n - 1 }),
+                                    'g' | 'H' => self.i = jump(self.i, 0),
+                                    'M' => self.i = jump(self.i, self.n / 2),
+                                    'G' | 'L' => self.i = jump(self.i, self.n - 1),
+                                    'r' | '$' => self.soft_reload(),
+                                    'i' => self.info(),
+                                    'p' => self.play_current(),
                                     _ => ()
                                 }
                             }
                             Err(_) => (),
-                        }
-                        if i <= 0 {
-                            i = n - 1;
-                        } else {
-                            i = i % n;
-                        }
-                    }
+                        };
+                        self.i = self.i % self.n;
+                    };
                 },
                 Err(e) =>
                     println!("{}", e),
@@ -254,4 +330,15 @@ fn main() {
         Err(e) =>
             panic!("error parsing header: {:?}", e)
     }
+    }
+}
+
+fn main() {
+    YoutubeSubscribtions{
+        n: 0,
+        start: 0,
+        i: 0,
+        toshow: vec![],
+        videos: Videos{videos: vec![]},
+    }.run();
 }
