@@ -5,6 +5,7 @@ extern crate reqwest;
 extern crate serde_json;
 extern crate terminal_size;
 extern crate crossterm_input;
+extern crate crossterm;
 
 
 use serde::{Serialize, Deserialize};
@@ -50,17 +51,6 @@ struct Video {
 struct Videos {
     videos: Vec<Video>,
 }
-
-/*
-impl<'data, T: Sync + 'data> IntoParallelIterator for &'data [T] {
-    type Item = &'data T;
-    type Iter = Iter<'data, T>;
-
-    fn into_par_iter(self) -> Self::Iter {
-        Iter { slice: self }
-    }
-}
-*/
 
 fn get_value(xpath: String, node: Element) -> String {
     let factory = Factory::new();
@@ -115,17 +105,28 @@ fn get_channel_videos(channel_url: String) -> Vec<Video> {
     }
 }
 
+fn print_animation(i: usize) -> usize {
+    let animation = vec!['◜', '◝', '◞', '◟'];
+    let ni = i % animation.len();
+    print!("\r{}", animation[ni]);
+    io::stdout().flush().unwrap();
+    ni + 1
+}
+
 fn get_videos(xml: String) -> Vec<Video> {
     let package = parser::parse(xml.as_str()).expect("failed to parse XML");
     let document = package.as_document();
+    let mut i = 0;
     match evaluate_xpath(&document, "//outline/@xmlUrl") {
         Ok(value) => 
             if let Value::Nodeset(urls) = value {
-                urls.iter().flat_map( |url|
+                urls.iter().flat_map( |url| {
+                    i = print_animation(i);
                     match url.attribute() {
                         Some(attribute) => Some(attribute.value().to_string()),
                         None => None
                     }
+                }
                 ).flat_map( |url|
                        get_channel_videos(url)
                 ).collect()
@@ -231,7 +232,7 @@ fn play(v: &Video) {
         Some(Some(id)) => {
             let path = format!("/tmp/{}.mp4", id);
             if !fs::metadata(&path).is_ok() {
-                Command::new("youtube-dl")
+                let mut child0 = Command::new("youtube-dl")
                     .arg("-f")
                     .arg("[height <=? 360][ext = mp4]")
                     .arg("-o")
@@ -239,14 +240,18 @@ fn play(v: &Video) {
                     .arg("--")
                     .arg(id)
                     .stdout(Stdio::piped())
-                    .output();
+                    .spawn()
+                    .unwrap();
+                child0.wait();
             }
-            Command::new("/Applications/VLC.app/Contents/MacOS/VLC")
+            let mut child1 = Command::new("/Applications/VLC.app/Contents/MacOS/VLC")
             .arg("--play-and-exit")
             .arg("-f")
             .arg(path)
             .stdout(Stdio::piped())
-            .output();
+            .spawn()
+            .unwrap();
+            child1.wait();
             ()
         },
         _ => (),
@@ -283,11 +288,6 @@ impl YoutubeSubscribtions {
     fn play_current(&mut self) {
         clear;
         play(&self.toshow[self.i]);
-        {
-            let input = input();
-            let screen = RawScreen::into_raw_mode();
-            input.read_char();
-        }
         clear;
         self.soft_reload();
     }
