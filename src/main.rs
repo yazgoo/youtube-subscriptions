@@ -73,10 +73,10 @@ fn get_videos(channel_url: String) -> Vec<Video> {
                                              vec![Video { 
                                                  channel: title.to_string(),
                                                  title: get_value("string(*[local-name() = 'title']/text())".to_string(), _element),
-                                                 thumbnail: get_value("string(*[local-name() = 'group']/*[local-name() = 'thumbnail']/@url/text())".to_string(), _element),
-                                                 url: get_value("string(*[local-name() = 'group']/*[local-name() = 'content']/@url/text())".to_string(), _element),
+                                                 thumbnail: get_value("string(*[local-name() = 'group']/*[local-name() = 'thumbnail']/@url)".to_string(), _element),
+                                                 url: get_value("string(*[local-name() = 'group']/*[local-name() = 'content']/@url)".to_string(), _element),
                                                  published: get_value("string(*[local-name() = 'published']/text())".to_string(), _element),
-                                                 description: get_value("string(*[local-name() = 'group']/*[local-name = 'description']/text())".to_string(), _element),
+                                                 description: get_value("string(*[local-name() = 'group']/*[local-name() = 'description']/text())".to_string(), _element),
                                              }]
                                          },
                                          None => vec![Video { 
