@@ -220,11 +220,37 @@ fn print_videos(toshow: &Vec<Video>) {
     }
 }
 
+fn get_id(v: &Video) -> Option<Option<String>> {
+    v.url.split("/").collect::<Vec<&str>>().last().map( |page|
+                                                        page.split("?").collect::<Vec<&str>>().first().map( |s| s.to_string() ))
+}
+      
 fn play(v: &Video) {
-    Command::new("/Applications/VLC.app/Contents/MacOS/VLC")
-        .arg("/tmp/ywBV6M7VOFU.mp4")
-        .stdout(Stdio::piped())
-        .spawn();
+    let id = get_id(v);
+    match id {
+        Some(Some(id)) => {
+            let path = format!("/tmp/{}.mp4", id);
+            if !fs::metadata(&path).is_ok() {
+                Command::new("youtube-dl")
+                    .arg("-f")
+                    .arg("[height <=? 360][ext = mp4]")
+                    .arg("-o")
+                    .arg(&path)
+                    .arg("--")
+                    .arg(id)
+                    .stdout(Stdio::piped())
+                    .output();
+            }
+            Command::new("/Applications/VLC.app/Contents/MacOS/VLC")
+            .arg("--play-and-exit")
+            .arg("-f")
+            .arg(path)
+            .stdout(Stdio::piped())
+            .output();
+            ()
+        },
+        _ => (),
+    }
 }
 
 fn print_info(v: &Video) {
@@ -257,6 +283,11 @@ impl YoutubeSubscribtions {
     fn play_current(&mut self) {
         clear;
         play(&self.toshow[self.i]);
+        {
+            let input = input();
+            let screen = RawScreen::into_raw_mode();
+            input.read_char();
+        }
         clear;
         self.soft_reload();
     }
@@ -272,18 +303,30 @@ impl YoutubeSubscribtions {
         clear;
         self.soft_reload();
     }
+
+    fn load(&mut self, reload: bool) -> Option<Videos> {
+        match get_subscriptions_xml() {
+            Ok(xml) => {
+                let path = "/tmp/yts.json";
+                if reload || !fs::metadata(path).is_ok() {
+                    let videos = Videos { videos: get_videos(xml)};
+                    let serialized = serde_json::to_string(&videos).unwrap();
+                    fs::write(path, serialized); 
+                }
+                match fs::read_to_string(path) {
+                    Ok(s) => 
+                        Some(serde_json::from_str(s.as_str()).unwrap()),
+                    Err(e) =>
+                        None
+                }
+            },
+            Err(e) =>
+                None
+        }
+    }
+
     fn run(&mut self) {
-    match get_subscriptions_xml() {
-        Ok(xml) => {
-            let path = "/tmp/yts.json";
-            if !fs::metadata(path).is_ok() {
-                let videos = Videos { videos: get_videos(xml)};
-                let serialized = serde_json::to_string(&videos).unwrap();
-                fs::write(path, serialized); 
-            }
-            match fs::read_to_string(path) {
-                Ok(s) => {
-                    self.videos = serde_json::from_str(s.as_str()).unwrap();
+                    self.videos = self.load(false).unwrap();
                     self.start = 0;
                     self.i = 0;
                     self.first_page();
@@ -313,6 +356,7 @@ impl YoutubeSubscribtions {
                                     'M' => self.i = jump(self.i, self.n / 2),
                                     'G' | 'L' => self.i = jump(self.i, self.n - 1),
                                     'r' | '$' => self.soft_reload(),
+                                    'R' => {self.videos = self.load(true).unwrap(); self.soft_reload()},
                                     'i' => self.info(),
                                     'p' => self.play_current(),
                                     _ => ()
@@ -322,15 +366,7 @@ impl YoutubeSubscribtions {
                         };
                         self.i = self.i % self.n;
                     };
-                },
-                Err(e) =>
-                    println!("{}", e),
             }
-        },
-        Err(e) =>
-            panic!("error parsing header: {:?}", e)
-    }
-    }
 }
 
 fn main() {
