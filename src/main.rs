@@ -15,14 +15,13 @@ use sxd_xpath::{evaluate_xpath, Value, Factory};
 use sxd_xpath::context::Context;
 use std::fs;
 use std::io;
-use std::io::{Read, Write, BufRead, BufReader};
+use std::io::{Read, Write};
 use std::io::Error;
 use sxd_document::dom::Element;
 use terminal_size::{Width, Height, terminal_size};
 use std::cmp::min;
 use std::process::{Command, Stdio};
 use crossterm_input::{input, RawScreen};
-use crossterm::{terminal, ClearType};
 use par_map::ParMap;
 
 fn get_subscriptions_xml() -> Result<String, Error> {
@@ -190,8 +189,8 @@ fn hide_cursor() {
 }
 
 fn clear() {
-    let terminal = terminal();
-    terminal.clear(ClearType::All);
+    print!("\x1b[2J");
+    io::stdout().flush().unwrap();
 }
 
 fn show_cursor() {
@@ -264,7 +263,7 @@ fn run_vlc(binary: &str, path: &String) {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    child1.wait();
+    child1.wait().expect("run vlc failed");
 }
 
 fn play_video(path: &String) {
@@ -277,7 +276,7 @@ fn play_video(path: &String) {
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
-        child1.wait();
+        child1.wait().expect("run omxplayer failed");
     }
     else {
         let macos_vlc = "/Applications/VLC.app/Contents/MacOS/VLC";
@@ -331,7 +330,7 @@ fn play(v: &Video) {
     }
 }
 
-fn print_help(v: &Video) {
+fn print_help() {
     println!("
   youtube-subscriptions: a tool to view your youtube subscriptions in a terminal
 
@@ -374,7 +373,7 @@ impl YoutubeSubscribtions {
             self.start = 0;
         }
         else if direction == -1 {
-            if(self.n > self.start) {
+            if self.n > self.start {
                 self.start = 0;
             }
             else {
@@ -433,7 +432,7 @@ impl YoutubeSubscribtions {
         {
             let input = input();
             let screen = RawScreen::into_raw_mode();
-            input.read_char();
+            let _c = input.read_char();
         }
         clear();
         self.soft_reload();
@@ -447,7 +446,7 @@ impl YoutubeSubscribtions {
 
     fn help(&mut self) {
         clear();
-        print_help(&self.toshow[self.i]);
+        print_help();
         self.wait_key_press_and_soft_reload()
     }
 
@@ -458,16 +457,16 @@ impl YoutubeSubscribtions {
                 if reload || !fs::metadata(path).is_ok() {
                     let videos = Videos { videos: get_videos(xml)};
                     let serialized = serde_json::to_string(&videos).unwrap();
-                    fs::write(path, serialized); 
+                    fs::write(path, serialized).expect("writing videos json failed");
                 }
                 match fs::read_to_string(path) {
                     Ok(s) => 
                         Some(serde_json::from_str(s.as_str()).unwrap()),
-                    Err(e) =>
+                    Err(_) =>
                         None
                 }
             },
-            Err(e) =>
+            Err(_) =>
                 None
         }
     }
@@ -479,7 +478,7 @@ impl YoutubeSubscribtions {
                     self.first_page();
                     self.clear_and_print_videos();
                     hide_cursor();
-                    while true {
+                    loop {
                         print_selector(self.i);
                         let input = input();
                         let result;
