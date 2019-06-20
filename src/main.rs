@@ -7,6 +7,7 @@ extern crate terminal_size;
 extern crate crossterm_input;
 extern crate crossterm;
 extern crate par_map;
+extern crate clipboard;
 
 
 use serde::{Serialize, Deserialize};
@@ -23,6 +24,9 @@ use std::cmp::min;
 use std::process::{Command, Stdio};
 use crossterm_input::{input, RawScreen};
 use par_map::ParMap;
+use webbrowser;
+use clipboard::ClipboardProvider;
+use clipboard::ClipboardContext;
 
 fn get_subscriptions_xml() -> Result<String, Error> {
     match dirs::home_dir() {
@@ -335,17 +339,21 @@ fn print_help() {
   youtube-subscriptions: a tool to view your youtube subscriptions in a terminal
 
   q        quit
-  j        move down
+  j,l      move down
   k        move up
-  g        go to top
-  G        go to bottom
-  r        soft refresh
+  g,H      go to top
+  G,L      go to bottom
+  M        go to middle
+  r,$      soft refresh
   P        previous page
   N        next page
-  R        full refresh
-  h        prints this help
+  R        full refresh (fetches video list)
+  h,?      prints this help
+  i        prints video information
   /        search
-  p,enter  plays video
+  p,enter  plays selected video
+  o        open selected video in browser
+  y        copy selected video url to clipboard
   ")
 }
 
@@ -408,6 +416,20 @@ impl YoutubeSubscribtions {
         clear();
         self.soft_reload();
     }
+
+    fn open_current(&mut self) {
+        let url = &self.toshow[self.i].url;
+        debug(&format!("opening {}", &url));
+        let _res = webbrowser::open(&url);
+    }
+
+    fn copy_to_clipboard_current(&mut self) {
+        let url = &self.toshow[self.i].url;
+        debug(&format!("copied {} to clipboard", &url));
+        let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+        ctx.set_contents(url.to_owned()).unwrap();
+    }
+
 
     fn find(&mut self, s: String) -> usize {
         for (i, video) in self.toshow.iter().enumerate() {
@@ -494,23 +516,21 @@ impl YoutubeSubscribtions {
                             break;
                         },
                         'j' | 'l' => self.i = jump(self.i, self.i + 1),
-
-                        'k' => 
-                            self.i = jump(self.i, 
-                                          if self.i > 0 { self.i - 1 } else { self.n - 1 }),
-                                          'g' | 'H' => self.i = jump(self.i, 0),
-                                              'M' => self.i = jump(self.i, self.n / 2),
-                                              'G' | 'L' => self.i = jump(self.i, self.n - 1),
-                                              'r' | '$' => self.soft_reload(),
-                                              'P' => self.previous_page(),
-                                              'N' => self.next_page(),
-                                              'R' => {self.videos = self.load(true).unwrap(); self.soft_reload()},
-                                              'h' | '?' => self.help(),
-                                              'i' => self.info(),
-                                              'p' | '\x0D' => self.play_current(),
-                                              '/' => self.search(),
-                                              _ => 
-                                                  debug(&format!("key not supported (press h for help)")),
+                        'k' => self.i = jump(self.i, if self.i > 0 { self.i - 1 } else { self.n - 1 }),
+                        'g' | 'H' => self.i = jump(self.i, 0),
+                        'M' => self.i = jump(self.i, self.n / 2),
+                        'G' | 'L' => self.i = jump(self.i, self.n - 1),
+                        'r' | '$' => self.soft_reload(),
+                        'P' => self.previous_page(),
+                        'N' => self.next_page(),
+                        'R' => {self.videos = self.load(true).unwrap(); self.soft_reload()},
+                        'h' | '?' => self.help(),
+                        'i' => self.info(),
+                        'p' | '\x0D' => self.play_current(),
+                        'o' => self.open_current(),
+                        'y' => self.copy_to_clipboard_current(),
+                        '/' => self.search(),
+                        _ => debug(&format!("key not supported (press h for help)")),
                     }
                 }
                 Err(_) => (),
