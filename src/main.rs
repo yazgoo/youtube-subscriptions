@@ -195,6 +195,17 @@ fn move_cursor(i: usize) {
     io::stdout().flush().unwrap();
 }
 
+fn move_to_bottom() {
+    print!("\x1b[{};0f", get_lines() + 1);
+    io::stdout().flush().unwrap();
+}
+
+fn debug(s: &String) {
+    move_to_bottom();
+    print!("{}", s);
+    io::stdout().flush().unwrap();
+}
+
 fn print_selector(i: usize) {
     move_cursor(i);
     print!("┃");
@@ -316,13 +327,14 @@ fn print_help(v: &Video) {
   youtube-subscriptions: a tool to view your youtube subscriptions in a terminal
 
   q        quit
-  j,down   move down
-  k,up     move up
+  j        move down
+  k        move up
   g        go to top
   G        go to bottom
   r        soft refresh
   R        full refresh
   h        prints this help
+  /        search
   p,enter  plays video
   ")
 }
@@ -360,6 +372,25 @@ impl YoutubeSubscribtions {
         play(&self.toshow[self.i]);
         clear();
         self.soft_reload();
+    }
+
+    fn find(&mut self, s: String) -> usize {
+        for (i, video) in self.toshow.iter().enumerate() {
+            if video.channel.contains(s.as_str()) || video.title.contains(s.as_str()) {
+                return i;
+            }
+        }
+        0
+    }
+
+    fn search(&mut self) {
+        move_to_bottom();
+        print!("/");
+        io::stdout().flush().unwrap();
+        let input = input();
+        let s = input.read_line().unwrap();
+        self.i = self.find(s);
+        self.clear_and_print_videos()
     }
 
     fn wait_key_press_and_soft_reload(&mut self) {
@@ -420,6 +451,7 @@ impl YoutubeSubscribtions {
                             let screen = RawScreen::into_raw_mode();
                             result = input.read_char();
                         }
+                        let arrow = 27 as char;
                         match result {
                             Ok(c) => {
                                 match c {
@@ -440,7 +472,11 @@ impl YoutubeSubscribtions {
                                     'h' | '?' => self.help(),
                                     'i' => self.info(),
                                     'p' | '\x0D' => self.play_current(),
-                                    _ => ()
+                                    '/' => self.search(),
+                                    arrow => 
+                                        debug(&format!("arrow keys are not supported (press h for help)")),
+                                    k => 
+                                        debug(&format!("{}: key not handled", k as u8)),
                                 }
                             }
                             Err(_) => (),
