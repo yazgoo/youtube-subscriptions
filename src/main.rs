@@ -332,6 +332,8 @@ fn print_help(v: &Video) {
   g        go to top
   G        go to bottom
   r        soft refresh
+  P        previous page
+  N        next page
   R        full refresh
   h        prints this help
   /        search
@@ -354,12 +356,37 @@ impl YoutubeSubscribtions {
         print_videos(&self.toshow)
     }
 
-    fn soft_reload(&mut self) {
+    fn move_page(&mut self, direction: i8) {
         self.n = get_lines();
-        self.start = 0;
+        if direction == 1 {
+            self.start += self.n;
+        }
+        else if direction == 0 {
+            self.start = 0;
+        }
+        else if direction == -1 {
+            if(self.n > self.start) {
+                self.start = 0;
+            }
+            else {
+                self.start = self.start - self.n;
+            }
+        }
         self.toshow = to_show_videos(&mut self.videos.videos, self.start, self.start + self.n);
         self.i = 0;
         self.clear_and_print_videos()
+    }
+
+    fn next_page(&mut self) {
+        self.move_page(-1);
+    }
+
+    fn previous_page(&mut self) {
+        self.move_page(1);
+    }
+
+    fn soft_reload(&mut self) {
+        self.move_page(0);
     }
 
     fn first_page(&mut self) {
@@ -451,7 +478,6 @@ impl YoutubeSubscribtions {
                             let screen = RawScreen::into_raw_mode();
                             result = input.read_char();
                         }
-                        let arrow = 27 as char;
                         match result {
                             Ok(c) => {
                                 match c {
@@ -468,15 +494,15 @@ impl YoutubeSubscribtions {
                                     'M' => self.i = jump(self.i, self.n / 2),
                                     'G' | 'L' => self.i = jump(self.i, self.n - 1),
                                     'r' | '$' => self.soft_reload(),
+                                    'P' => self.previous_page(),
+                                    'N' => self.next_page(),
                                     'R' => {self.videos = self.load(true).unwrap(); self.soft_reload()},
                                     'h' | '?' => self.help(),
                                     'i' => self.info(),
                                     'p' | '\x0D' => self.play_current(),
                                     '/' => self.search(),
-                                    arrow => 
-                                        debug(&format!("arrow keys are not supported (press h for help)")),
-                                    k => 
-                                        debug(&format!("{}: key not handled", k as u8)),
+                                    _ => 
+                                        debug(&format!("key not supported (press h for help)")),
                                 }
                             }
                             Err(_) => (),
