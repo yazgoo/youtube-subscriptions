@@ -431,7 +431,7 @@ impl YoutubeSubscribtions {
     fn wait_key_press_and_soft_reload(&mut self) {
         {
             let input = input();
-            let screen = RawScreen::into_raw_mode();
+            let _screen = RawScreen::into_raw_mode();
             let _c = input.read_char();
         }
         clear();
@@ -472,52 +472,52 @@ impl YoutubeSubscribtions {
     }
 
     fn run(&mut self) {
-                    self.videos = self.load(false).unwrap();
-                    self.start = 0;
-                    self.i = 0;
-                    self.first_page();
-                    self.clear_and_print_videos();
-                    hide_cursor();
-                    loop {
-                        print_selector(self.i);
-                        let input = input();
-                        let result;
-                        {
-                            let screen = RawScreen::into_raw_mode();
-                            result = input.read_char();
-                        }
-                        match result {
-                            Ok(c) => {
-                                match c {
-                                    'q' => {
-                                        show_cursor();
-                                        break;
-                                    },
-                                    'j' | 'l' => self.i = jump(self.i, self.i + 1),
-
-                                    'k' => 
-                                        self.i = jump(self.i, 
-                                                 if self.i > 0 { self.i - 1 } else { self.n - 1 }),
-                                    'g' | 'H' => self.i = jump(self.i, 0),
-                                    'M' => self.i = jump(self.i, self.n / 2),
-                                    'G' | 'L' => self.i = jump(self.i, self.n - 1),
-                                    'r' | '$' => self.soft_reload(),
-                                    'P' => self.previous_page(),
-                                    'N' => self.next_page(),
-                                    'R' => {self.videos = self.load(true).unwrap(); self.soft_reload()},
-                                    'h' | '?' => self.help(),
-                                    'i' => self.info(),
-                                    'p' | '\x0D' => self.play_current(),
-                                    '/' => self.search(),
-                                    _ => 
-                                        debug(&format!("key not supported (press h for help)")),
-                                }
-                            }
-                            Err(_) => (),
-                        };
-                        self.i = self.i % self.n;
-                    };
+        self.videos = self.load(false).unwrap();
+        self.start = 0;
+        self.i = 0;
+        self.first_page();
+        self.clear_and_print_videos();
+        hide_cursor();
+        loop {
+            print_selector(self.i);
+            let input = input();
+            let result;
+            {
+                let _screen = RawScreen::into_raw_mode();
+                result = input.read_char();
             }
+            match result {
+                Ok(c) => {
+                    match c {
+                        'q' => {
+                            show_cursor();
+                            break;
+                        },
+                        'j' | 'l' => self.i = jump(self.i, self.i + 1),
+
+                        'k' => 
+                            self.i = jump(self.i, 
+                                          if self.i > 0 { self.i - 1 } else { self.n - 1 }),
+                                          'g' | 'H' => self.i = jump(self.i, 0),
+                                              'M' => self.i = jump(self.i, self.n / 2),
+                                              'G' | 'L' => self.i = jump(self.i, self.n - 1),
+                                              'r' | '$' => self.soft_reload(),
+                                              'P' => self.previous_page(),
+                                              'N' => self.next_page(),
+                                              'R' => {self.videos = self.load(true).unwrap(); self.soft_reload()},
+                                              'h' | '?' => self.help(),
+                                              'i' => self.info(),
+                                              'p' | '\x0D' => self.play_current(),
+                                              '/' => self.search(),
+                                              _ => 
+                                                  debug(&format!("key not supported (press h for help)")),
+                    }
+                }
+                Err(_) => (),
+            };
+            self.i = self.i % self.n;
+        };
+    }
 }
 
 fn main() {
