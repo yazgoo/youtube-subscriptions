@@ -15,7 +15,7 @@ use sxd_xpath::{evaluate_xpath, Value, Factory};
 use sxd_xpath::context::Context;
 use std::fs;
 use std::io;
-use std::io::{Read, Write};
+use std::io::{Read, Write, BufRead, BufReader};
 use std::io::Error;
 use sxd_document::dom::Element;
 use terminal_size::{Width, Height, terminal_size};
@@ -273,7 +273,7 @@ fn play_video(path: &String) {
 
 fn download_video(path: &String, id: &String) {
     if !fs::metadata(&path).is_ok() {
-        let mut child0 = Command::new("youtube-dl")
+        match Command::new("youtube-dl")
             .arg("-f")
             .arg("[height <=? 360][ext = mp4]")
             .arg("-o")
@@ -281,9 +281,22 @@ fn download_video(path: &String, id: &String) {
             .arg("--")
             .arg(&id)
             .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child0.wait();
+            .spawn() {
+                Ok(spawn) => {
+                    match spawn.stdout {
+                        Some(stdout) => {
+                            let reader = BufReader::new(stdout);
+
+                        reader
+                            .lines()
+                            .filter_map(|line| line.ok())
+                            .for_each(|line| println!("{}", line));
+                        },
+                        None => ()
+                    }
+                },
+                Err(_) => ()
+            }
     }
 }
 
