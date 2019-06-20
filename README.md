@@ -1,6 +1,7 @@
 # youtube-subscriptions
 
 terminal client for your youtube subscriptions
+[here is a video](https://www.youtube.com/watch?v=saYmXcZNU8M&feature=youtu.be) showing what it looks like.
 
 # requirements
 
