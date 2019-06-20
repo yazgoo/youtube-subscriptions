@@ -247,7 +247,7 @@ fn print_videos(toshow: &Vec<Video>) {
         let published = video.published.split("T").collect::<Vec<&str>>();
         let whitespaces = " ".repeat(max - video.channel.chars().count());
         let s = format!("  \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}", published[0][5..10].to_string(), video.channel, whitespaces, video.title);
-        println!("{}", s[0..min(s.len(), cols-4+9+9)].to_string());
+        println!("{}", s.chars().take(min(s.len(), cols-4+9+9)).collect::<String>());
     }
 }
 
