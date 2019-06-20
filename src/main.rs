@@ -29,8 +29,17 @@ fn get_subscriptions_xml() -> Result<String, Error> {
     match dirs::home_dir() {
         Some(home) =>
             match home.to_str() {
-                Some(s) =>
-                    return fs::read_to_string(format!("{}/.config/youtube-subscriptions/subscription_manager", s)),
+                Some(s) => {
+                    let path = format!("{}/.config/youtube-subscriptions/subscription_manager", s);
+                    if fs::metadata(&path).is_ok() {
+                        return fs::read_to_string(path)
+                    }
+                    else {
+                        panic!("configuration is missing
+please download: https://www.youtube.com/subscription_manager?action_takeout=1
+make it available as {} ", s)
+                    }
+                },
                 None =>
                     panic!("failed reading subscription_manager")
             },
