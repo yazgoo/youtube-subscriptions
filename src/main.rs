@@ -285,12 +285,10 @@ fn download_video(path: &String, id: &String) {
                 Ok(spawn) => {
                     match spawn.stdout {
                         Some(stdout) => {
-                            let reader = BufReader::new(stdout);
-
-                        reader
-                            .lines()
-                            .filter_map(|line| line.ok())
-                            .for_each(|line| println!("{}", line));
+                            for byte in stdout.bytes() {
+                                print!("{}", byte.unwrap() as char);
+                                io::stdout().flush().unwrap();
+                            }
                         },
                         None => ()
                     }
