@@ -14,3 +14,4 @@ serde_json = { version = "1.0", default-features = false }
 terminal_size = { version = "0.1.8", default-features = false }
 crossterm_input = { version = "0.3", default-features = false }
 crossterm = { version = "0.9" }
+par-map = { version = "0.1.4" }

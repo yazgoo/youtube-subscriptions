@@ -6,6 +6,7 @@ extern crate serde_json;
 extern crate terminal_size;
 extern crate crossterm_input;
 extern crate crossterm;
+extern crate par_map;
 
 
 use serde::{Serialize, Deserialize};
@@ -22,6 +23,7 @@ use std::cmp::min;
 use std::process::{Command, Stdio};
 use crossterm_input::{input, RawScreen};
 use crossterm::{terminal, ClearType};
+use par_map::ParMap;
 
 fn get_subscriptions_xml() -> Result<String, Error> {
     match dirs::home_dir() {
@@ -61,7 +63,7 @@ fn get_value(xpath: String, node: Element) -> String {
 }
 
 fn get_channel_videos(channel_url: String) -> Vec<Video> {
-    match reqwest::get(channel_url.as_str()) {
+    match reqwest::get(channel_url.replace("https:", "http:").as_str()) {
         Ok(mut result) => 
             match result.text() {
                 Ok(contents) => {
@@ -93,15 +95,20 @@ fn get_channel_videos(channel_url: String) -> Vec<Video> {
                             }
                         },
                         Err(_) => {
+                            println!("aaaaa");
                             vec![]
                         }
                     }
                 },
-                Err(_) =>
-                            vec![],
+                Err(_) => {
+                    println!("bbbbb");
+                    vec![]
+                },
             },
-        Err(_) =>
-                            vec![],
+        Err(e) => {
+            println!("{}", e);
+            vec![]
+        },
     }
 }
 
@@ -118,7 +125,7 @@ fn get_videos(xml: String) -> Vec<Video> {
     let document = package.as_document();
     let mut i = 0;
     match evaluate_xpath(&document, "//outline/@xmlUrl") {
-        Ok(value) => 
+        Ok(value) =>  {
             if let Value::Nodeset(urls) = value {
                 urls.iter().flat_map( |url| {
                     i = print_animation(i);
@@ -127,15 +134,18 @@ fn get_videos(xml: String) -> Vec<Video> {
                         None => None
                     }
                 }
-                ).flat_map( |url|
+                ).par_flat_map( |url|
                        get_channel_videos(url)
                 ).collect()
             }
             else {
                 vec![]
             }
-        Err(_) =>
+        },
+        Err(err) => {
+            println!("{:?}", err);
             vec![]
+        }
     }
     
 }
@@ -211,11 +221,11 @@ struct YoutubeSubscribtions {
 }
 
 fn print_videos(toshow: &Vec<Video>) {
-    let max = toshow.iter().fold(0, |acc, x| if x.channel.len() > acc { x.channel.len() } else { acc } );
+    let max = toshow.iter().fold(0, |acc, x| if x.channel.chars().count() > acc { x.channel.chars().count() } else { acc } );
     let cols = get_cols();
     for video in toshow {
         let published = video.published.split("T").collect::<Vec<&str>>();
-        let whitespaces = " ".repeat(max - video.channel.len());
+        let whitespaces = " ".repeat(max - video.channel.chars().count());
         let s = format!("  {} {}{} {}", published[0][5..10].to_string(), video.channel, whitespaces, video.title);
         println!("{}", s[0..min(s.len(), cols-4)].to_string());
     }
@@ -225,37 +235,85 @@ fn get_id(v: &Video) -> Option<Option<String>> {
     v.url.split("/").collect::<Vec<&str>>().last().map( |page|
                                                         page.split("?").collect::<Vec<&str>>().first().map( |s| s.to_string() ))
 }
-      
+
+fn run_vlc(binary: &str, path: &String) {
+    let mut child1 = Command::new(&binary)
+        .arg("--play-and-exit")
+        .arg("-f")
+        .arg(path)
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child1.wait();
+}
+
+fn play_video(path: &String) {
+    let omxplayer_path = "/usr/bin/omxplayer";
+    if fs::metadata(&omxplayer_path).is_ok() {
+        let mut child1 = Command::new(omxplayer_path)
+            .arg("-o")
+            .arg("local")
+            .arg(path)
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child1.wait();
+    }
+    else {
+        let macos_vlc = "/Applications/VLC.app/Contents/MacOS/VLC";
+        if fs::metadata(&macos_vlc).is_ok() {
+            run_vlc(&macos_vlc, &path);
+        }
+        else {
+            let vlc = "vlc";
+            run_vlc(&vlc, &path);
+        }
+    }
+}
+
+fn download_video(path: &String, id: &String) {
+    if !fs::metadata(&path).is_ok() {
+        let mut child0 = Command::new("youtube-dl")
+            .arg("-f")
+            .arg("[height <=? 360][ext = mp4]")
+            .arg("-o")
+            .arg(&path)
+            .arg("--")
+            .arg(&id)
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child0.wait();
+    }
+}
+
 fn play(v: &Video) {
     let id = get_id(v);
     match id {
         Some(Some(id)) => {
             let path = format!("/tmp/{}.mp4", id);
-            if !fs::metadata(&path).is_ok() {
-                let mut child0 = Command::new("youtube-dl")
-                    .arg("-f")
-                    .arg("[height <=? 360][ext = mp4]")
-                    .arg("-o")
-                    .arg(&path)
-                    .arg("--")
-                    .arg(id)
-                    .stdout(Stdio::piped())
-                    .spawn()
-                    .unwrap();
-                child0.wait();
-            }
-            let mut child1 = Command::new("/Applications/VLC.app/Contents/MacOS/VLC")
-            .arg("--play-and-exit")
-            .arg("-f")
-            .arg(path)
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-            child1.wait();
+            download_video(&path, &id);
+            play_video(&path);
             ()
         },
         _ => (),
     }
+}
+
+fn print_help(v: &Video) {
+    println!("
+  youtube-subscriptions: a tool to view your youtube subscriptions in a terminal
+
+  q        quit
+  j,down   move down
+  k,up     move up
+  g        go to top
+  G        go to bottom
+  r        soft refresh
+  R        full refresh
+  h        prints this help
+  p,enter  plays video
+  ")
 }
 
 fn print_info(v: &Video) {
@@ -285,23 +343,34 @@ impl YoutubeSubscribtions {
         self.n = get_lines();
         self.toshow = to_show_videos(&mut self.videos.videos, self.start, self.n);
     }
+
     fn play_current(&mut self) {
-        clear;
+        clear();
         play(&self.toshow[self.i]);
-        clear;
+        clear();
         self.soft_reload();
     }
-    fn info(&mut self) {
-        clear;
-        let input = input();
-        println!("info");
-        print_info(&self.toshow[self.i]);
+
+    fn wait_key_press_and_soft_reload(&mut self) {
         {
+            let input = input();
             let screen = RawScreen::into_raw_mode();
             input.read_char();
         }
-        clear;
+        clear();
         self.soft_reload();
+    }
+
+    fn info(&mut self) {
+        clear();
+        print_info(&self.toshow[self.i]);
+        self.wait_key_press_and_soft_reload()
+    }
+
+    fn help(&mut self) {
+        clear();
+        print_help(&self.toshow[self.i]);
+        self.wait_key_press_and_soft_reload()
     }
 
     fn load(&mut self, reload: bool) -> Option<Videos> {
@@ -349,7 +418,7 @@ impl YoutubeSubscribtions {
                                     },
                                     'j' | 'l' => self.i = jump(self.i, self.i + 1),
 
-                                    'k' | 'h' => 
+                                    'k' => 
                                         self.i = jump(self.i, 
                                                  if self.i > 0 { self.i - 1 } else { self.n - 1 }),
                                     'g' | 'H' => self.i = jump(self.i, 0),
@@ -357,6 +426,7 @@ impl YoutubeSubscribtions {
                                     'G' | 'L' => self.i = jump(self.i, self.n - 1),
                                     'r' | '$' => self.soft_reload(),
                                     'R' => {self.videos = self.load(true).unwrap(); self.soft_reload()},
+                                    'h' | '?' => self.help(),
                                     'i' => self.info(),
                                     'p' => self.play_current(),
                                     _ => ()
