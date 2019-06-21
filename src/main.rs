@@ -127,7 +127,7 @@ fn get_channel_videos(channel_url: String) -> Vec<Video> {
 fn print_animation(i: usize) -> usize {
     let animation = vec!['◜', '◝', '◞', '◟'];
     let ni = i % animation.len();
-    print!("\r{}", animation[ni]);
+    print!("\r{}\r", animation[ni]);
     io::stdout().flush().unwrap();
     ni + 1
 }
@@ -220,7 +220,7 @@ fn debug(s: &String) {
 
 fn print_selector(i: usize) {
     move_cursor(i);
-    print!("┃");
+    print!("┃\r");
     io::stdout().flush().unwrap();
 }
 
@@ -375,7 +375,9 @@ impl YoutubeSubscribtions {
     fn move_page(&mut self, direction: i8) {
         self.n = get_lines();
         if direction == 1 {
-            self.start += self.n;
+            if self.start + 2 * self.n < self.videos.videos.len() {
+                self.start += self.n;
+            }
         }
         else if direction == 0 {
             self.start = 0;
@@ -413,8 +415,7 @@ impl YoutubeSubscribtions {
     fn play_current(&mut self) {
         clear();
         play(&self.toshow[self.i]);
-        clear();
-        self.soft_reload();
+        self.clear_and_print_videos();
     }
 
     fn open_current(&mut self) {
