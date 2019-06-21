@@ -2,7 +2,9 @@
 
 terminal client for your youtube subscriptions.
 
-[here is a video](https://www.youtube.com/watch?v=saYmXcZNU8M&feature=youtu.be) showing what it looks like.
+[![asciicast](https://asciinema.org/a/6pXhdC6yCrAU7LrtpeUMPhMA0.svg)](https://asciinema.org/a/6pXhdC6yCrAU7LrtpeUMPhMA0)
+
+Also, [here is a video](https://www.youtube.com/watch?v=saYmXcZNU8M&feature=youtu.be) showing what it looks like.
 
 # requirements
 
