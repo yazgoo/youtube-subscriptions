@@ -2,7 +2,9 @@
 
 terminal client for your youtube subscriptions.
 
-[![asciicast]<img width=200 src="https://asciinema.org/a/6pXhdC6yCrAU7LrtpeUMPhMA0.svg"/>](https://asciinema.org/a/6pXhdC6yCrAU7LrtpeUMPhMA0)
+<a href=https://asciinema.org/a/6pXhdC6yCrAU7LrtpeUMPhMA0>
+<img width=250 src="https://asciinema.org/a/6pXhdC6yCrAU7LrtpeUMPhMA0.svg"/>
+</a>
 
 Also, [here is a video](https://www.youtube.com/watch?v=saYmXcZNU8M&feature=youtu.be) showing what it looks like.
 
