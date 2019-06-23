@@ -3,6 +3,13 @@ name = "youtube-subscriptions"
 version = "0.1.0"
 authors = ["yazgoo <yazgoo@gmail.com>"]
 edition = "2018"
+license = "MIT"
+description = "terminal UI for viewing youtube subscriptions"
+readme = "README.md"
+homepage = "https://github.com/yazgoo/youtube-subscriptions"
+repository = "https://github.com/yazgoo/youtube-subscriptions"
+keywords = ["cli", "youtube", "terminal"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 sxd-xpath = { version = "0.4.2", default-features = false }

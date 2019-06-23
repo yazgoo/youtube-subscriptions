@@ -1,6 +1,6 @@
 # youtube-subscriptions
 
-terminal UI for viewing youtube subscription.
+terminal UI for viewing youtube subscriptions.
 Especially well suited for Raspberry Pi.
 
 <a href=https://asciinema.org/a/6pXhdC6yCrAU7LrtpeUMPhMA0>
