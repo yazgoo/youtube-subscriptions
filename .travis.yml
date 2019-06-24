@@ -1,0 +1,36 @@
+language: rust
+rust:
+  - stable
+  - beta
+  - nightly
+matrix:
+  allow_failures:
+    - rust: nightly
+  fast_finish: true
+cache: cargo
+matrix:
+  include:
+  - name: Linux Binary
+    env: TARGET=x86_64-unknown-linux-musl
+    rust: stable
+    before_script: rustup target add $TARGET
+    script: cargo build --release --target $TARGET --locked --features vendored-openssl
+    <<: *DEPLOY_TO_GITHUB
+  - name: macOS Binary
+    env: MACOSX_DEPLOYMENT_TARGET=10.7 TARGET=x86_64-apple-darwin
+    os: osx
+    rust: stable
+    install: true
+    <<: *DEPLOY_TO_GITHUB
+  - name: macOS Binary
+    env: MACOSX_DEPLOYMENT_TARGET=10.7 TARGET=x86_64-apple-darwin
+    os: osx
+    rust: stable
+    install: true
+    <<: *DEPLOY_TO_GITHUB
+  - name: raspberryPi Binary
+    env: TARGET=arm-unknown-linux-gnueabihf CARGO_TARGET_ARM_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
+    rust: stable
+    before_script: rustup target add $TARGET
+    script: cargo build --release --target $TARGET --locked --features vendored-openssl
+    <<: *DEPLOY_TO_GITHUB
