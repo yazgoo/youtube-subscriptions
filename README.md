@@ -12,6 +12,12 @@ Especially well suited for Raspberry Pi.
 - [youtube-dl](https://ytdl-org.github.io/youtube-dl/index.html) to download youtube videos
 - [omxplayer](https://www.raspberrypi.org/documentation/raspbian/applications/omxplayer.md) or [vlc](https://www.videolan.org) to play videos
 
+# installing
+
+```
+$ cargo install youtube-subscriptions
+```
+
 # setup
 
 download your [youtube subscriptions OPML](https://www.youtube.com/subscription_manager?action_takeout=1).
