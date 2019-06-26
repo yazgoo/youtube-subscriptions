@@ -169,6 +169,28 @@ fn to_show_videos(videos: &mut Vec<Video>, start: usize, count: usize) -> Vec<Vi
     return result;
 }
 
+fn load(reload: bool) -> Option<Videos> {
+    match get_subscriptions_xml() {
+        Ok(xml) => {
+            let path = "/tmp/yts.json";
+            if reload || !fs::metadata(path).is_ok() {
+                let videos = Videos { videos: get_videos(xml)};
+                let serialized = serde_json::to_string(&videos).unwrap();
+                fs::write(path, serialized).expect("writing videos json failed");
+            }
+            match fs::read_to_string(path) {
+                Ok(s) => 
+                    Some(serde_json::from_str(s.as_str()).unwrap()),
+                Err(_) =>
+                    None
+            }
+        },
+        Err(_) =>
+            None
+    }
+}
+
+
 fn get_lines() -> usize {
     let size = terminal_size();
     if let Some((Width(_), Height(h))) = size {
@@ -407,6 +429,13 @@ impl YoutubeSubscribtions {
         self.move_page(0);
     }
 
+    fn hard_reload(&mut self) {
+        debug(&"  updating list".to_string());
+        self.videos = load(true).unwrap();
+        self.soft_reload();
+        debug(&"".to_string());
+    }
+
     fn first_page(&mut self) {
         self.n = get_lines();
         self.toshow = to_show_videos(&mut self.videos.videos, self.start, self.n);
@@ -473,29 +502,8 @@ impl YoutubeSubscribtions {
         self.wait_key_press_and_soft_reload()
     }
 
-    fn load(&mut self, reload: bool) -> Option<Videos> {
-        match get_subscriptions_xml() {
-            Ok(xml) => {
-                let path = "/tmp/yts.json";
-                if reload || !fs::metadata(path).is_ok() {
-                    let videos = Videos { videos: get_videos(xml)};
-                    let serialized = serde_json::to_string(&videos).unwrap();
-                    fs::write(path, serialized).expect("writing videos json failed");
-                }
-                match fs::read_to_string(path) {
-                    Ok(s) => 
-                        Some(serde_json::from_str(s.as_str()).unwrap()),
-                    Err(_) =>
-                        None
-                }
-            },
-            Err(_) =>
-                None
-        }
-    }
-
     fn run(&mut self) {
-        self.videos = self.load(false).unwrap();
+        self.videos = load(false).unwrap();
         self.start = 0;
         self.i = 0;
         self.first_page();
@@ -524,7 +532,7 @@ impl YoutubeSubscribtions {
                         'r' | '$' => self.soft_reload(),
                         'P' => self.previous_page(),
                         'N' => self.next_page(),
-                        'R' => {self.videos = self.load(true).unwrap(); self.soft_reload()},
+                        'R' => self.hard_reload(),
                         'h' | '?' => self.help(),
                         'i' => self.info(),
                         'p' | '\x0D' => self.play_current(),
