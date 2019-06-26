@@ -13,6 +13,7 @@ use sxd_document::parser;
 use sxd_xpath::{evaluate_xpath, Value, Factory};
 use sxd_xpath::context::Context;
 use std::fs;
+use std::env;
 use std::io;
 use std::io::{Read, Write};
 use std::io::Error;
@@ -332,8 +333,7 @@ fn download_video(path: &String, id: &String) {
 }
 
 fn play(v: &Video) {
-    let id = get_id(v);
-    match id {
+    match get_id(v) {
         Some(Some(id)) => {
             let path = format!("/tmp/{}.mp4", id);
             download_video(&path, &id);
@@ -482,6 +482,20 @@ impl YoutubeSubscribtions {
         self.wait_key_press_and_soft_reload()
     }
 
+    fn download(&mut self, take: usize) {
+        self.hard_reload();
+        let n = self.videos.videos.len();
+        for video in self.videos.videos.iter().rev().take(take) {
+            match get_id(video) {
+                Some(Some(id)) => {
+                    let path = format!("/tmp/{}.mp4", id);
+                    download_video(&path, &id);
+                },
+                _ => (),
+            }
+        }
+    }
+
     fn run(&mut self) {
         self.videos = load(false).unwrap();
         self.start = 0;
@@ -529,11 +543,21 @@ impl YoutubeSubscribtions {
 }
 
 fn main() {
-    YoutubeSubscribtions{
-        n: 0,
-        start: 0,
-        i: 0,
-        toshow: vec![],
-        videos: Videos{videos: vec![]},
-    }.run();
+    let args: Vec<String> = env::args().collect();
+    let mut yts = YoutubeSubscribtions{
+            n: 0,
+            start: 0,
+            i: 0,
+            toshow: vec![],
+            videos: Videos{videos: vec![]}
+    };
+    match args.len() {
+        2 => {
+            match args[1].parse::<usize>() {
+                Ok(n) => yts.download(n),
+                Err(_) => yts.run(),
+            };
+        },
+        _ => yts.run(),
+    }
 }
