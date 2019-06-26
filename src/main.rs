@@ -2,14 +2,13 @@ extern crate sxd_document;
 extern crate sxd_xpath;
 extern crate dirs;
 extern crate ureq;
-extern crate serde_json;
 extern crate terminal_size;
 extern crate crossterm_input;
 extern crate crossterm;
 extern crate par_map;
 
 
-use serde::{Serialize, Deserialize};
+use miniserde::{json, Serialize, Deserialize};
 use sxd_document::parser;
 use sxd_xpath::{evaluate_xpath, Value, Factory};
 use sxd_xpath::context::Context;
@@ -164,12 +163,12 @@ fn load(reload: bool) -> Option<Videos> {
             let path = "/tmp/yts.json";
             if reload || !fs::metadata(path).is_ok() {
                 let videos = Videos { videos: get_videos(xml)};
-                let serialized = serde_json::to_string(&videos).unwrap();
+                let serialized = json::to_string(&videos);
                 fs::write(path, serialized).expect("writing videos json failed");
             }
             match fs::read_to_string(path) {
                 Ok(s) => 
-                    Some(serde_json::from_str(s.as_str()).unwrap()),
+                    Some(json::from_str(s.as_str()).unwrap()),
                 Err(_) =>
                     None
             }
