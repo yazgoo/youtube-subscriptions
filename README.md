@@ -29,15 +29,6 @@ and save them as the following file:
 
 press h for help.
 
-# cross compiling for raspberry pi
-
-simply run:
-
-```sh
-./cross-build-raspberry.sh
-```
-binary will be in `target/arm-unknown-linux-gnueabihf/release/youtube-subscriptions`
-
 # download mode
 
 You can update the subscriptions and download the last N videos by running.
@@ -46,3 +37,21 @@ Here with N = 5:
 ```sh
 $ youtube-subscriptions 5
 ```
+
+This is very usefull to download your subscriptions in a cron.
+Don't forget to put the path were youtube-dl is installed.
+Example crontab:
+
+```cron
+PATH=/home/pi/.local/bin/:/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+50 * * * * /home/pi/youtube-subscriptions 5 > /home/pi/youtube-subscriptions.log 2>&1
+```
+
+# cross compiling for raspberry pi
+
+simply run:
+
+```sh
+./cross-build-raspberry.sh
+```
+binary will be in `target/arm-unknown-linux-gnueabihf/release/youtube-subscriptions`
