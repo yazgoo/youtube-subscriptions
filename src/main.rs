@@ -1,13 +1,12 @@
 extern crate sxd_document;
 extern crate sxd_xpath;
 extern crate dirs;
-extern crate reqwest;
+extern crate ureq;
 extern crate serde_json;
 extern crate terminal_size;
 extern crate crossterm_input;
 extern crate crossterm;
 extern crate par_map;
-extern crate clipboard;
 
 
 use serde::{Serialize, Deserialize};
@@ -25,8 +24,6 @@ use std::process::{Command, Stdio};
 use crossterm_input::{input, RawScreen};
 use par_map::ParMap;
 use webbrowser;
-use clipboard::ClipboardProvider;
-use clipboard::ClipboardContext;
 
 fn get_subscriptions_xml() -> Result<String, Error> {
     match dirs::home_dir() {
@@ -75,10 +72,9 @@ fn get_value(xpath: String, node: Element) -> String {
 }
 
 fn get_channel_videos(channel_url: String) -> Vec<Video> {
-    match reqwest::get(channel_url.replace("https:", "http:").as_str()) {
-        Ok(mut result) => 
-            match result.text() {
-                Ok(contents) => {
+    let response = ureq::get(channel_url.replace("https:", "http:").as_str()).call();
+    if response.ok() {
+        let contents = response.into_string().unwrap();
                     let package = parser::parse(contents.as_str()).expect("failed to parse XML");
                     let document = package.as_document();
                     let title = evaluate_xpath(&document, "string(/*[local-name() = 'feed']/*[local-name() = 'title']/text())").unwrap_or(Value::String("".to_string())).string();
@@ -111,16 +107,9 @@ fn get_channel_videos(channel_url: String) -> Vec<Video> {
                             vec![]
                         }
                     }
-                },
-                Err(_) => {
-                    println!("bbbbb");
-                    vec![]
-                },
-            },
-        Err(e) => {
-            println!("{}", e);
-            vec![]
-        },
+                }
+    else {
+        vec![]
     }
 }
 
@@ -375,7 +364,6 @@ fn print_help() {
   /        search
   p,enter  plays selected video
   o        open selected video in browser
-  y        copy selected video url to clipboard
   ")
 }
 
@@ -451,13 +439,6 @@ impl YoutubeSubscribtions {
         let url = &self.toshow[self.i].url;
         debug(&format!("opening {}", &url));
         let _res = webbrowser::open(&url);
-    }
-
-    fn copy_to_clipboard_current(&mut self) {
-        let url = &self.toshow[self.i].url;
-        debug(&format!("copied {} to clipboard", &url));
-        let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-        ctx.set_contents(url.to_owned()).unwrap();
     }
 
 
@@ -537,7 +518,6 @@ impl YoutubeSubscribtions {
                         'i' => self.info(),
                         'p' | '\x0D' => self.play_current(),
                         'o' => self.open_current(),
-                        'y' => self.copy_to_clipboard_current(),
                         '/' => self.search(),
                         _ => debug(&format!("key not supported (press h for help)")),
                     }
