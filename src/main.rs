@@ -484,7 +484,6 @@ impl YoutubeSubscribtions {
 
     fn download(&mut self, take: usize) {
         self.hard_reload();
-        let n = self.videos.videos.len();
         for video in self.videos.videos.iter().rev().take(take) {
             match get_id(video) {
                 Some(Some(id)) => {
@@ -554,7 +553,7 @@ fn main() {
     match args.len() {
         2 => {
             match args[1].parse::<usize>() {
-                Ok(n) => yts.download(n),
+                Ok(_n) => yts.download(_n),
                 Err(_) => yts.run(),
             };
         },

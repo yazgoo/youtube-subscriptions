@@ -37,3 +37,12 @@ simply run:
 ./cross-build-raspberry.sh
 ```
 binary will be in `target/arm-unknown-linux-gnueabihf/release/youtube-subscriptions`
+
+# download mode
+
+You can update the subscriptions and download the last N videos by running.
+Here with N = 5:
+
+```sh
+$ youtube-subscriptions 5
+```
