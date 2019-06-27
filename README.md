@@ -20,7 +20,7 @@ $ cargo install youtube-subscriptions
 
 # setup
 
-download your [youtube subscriptions OPML](https://www.youtube.com/subscription_manager?action_takeout=1).
+Download your [youtube subscriptions OPML](https://www.youtube.com/subscription_manager?action_takeout=1).
 and save them as the following file:
   ~/.config/youtube-subscriptions/subscription_manager
 
