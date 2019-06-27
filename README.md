@@ -39,7 +39,9 @@ $ youtube-subscriptions 5
 ```
 
 This is very usefull to download your subscriptions in a cron.
+
 Don't forget to put the path were youtube-dl is installed.
+
 Example crontab:
 
 ```cron
