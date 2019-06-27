@@ -1,31 +1,31 @@
 language: rust
 rust:
-  - stable
-  - beta
-  - nightly
+- stable
+- beta
+- nightly
 matrix:
   allow_failures:
-    - rust: nightly
+  - rust: nightly
   fast_finish: true
 os:
 - linux
 - osx
 deploy:
-  - provider: cargo
-    skip_cleanup: true
-    on:
-      tags: true
-      condition: "$TRAVIS_RUST_VERSION = stable && $TRAVIS_OS_NAME = linux"
-      branch: master
-    token:
-      secure: # ;)
-  - provider: releases
-    skip_cleanup: true
-    on:
-      tags: true
-      condition: "$TRAVIS_RUST_VERSION = stable"
-      branch: master
-    file:
-      - target/release/youtube-subscriptions-*
-    api_key:
-      secure: # ;)
+- provider: cargo
+  skip_cleanup: true
+  on:
+    tags: true
+    condition: "$TRAVIS_RUST_VERSION = stable && $TRAVIS_OS_NAME = linux"
+    branch: master
+  token:
+    secure: k4afO5kZEu1PLNWLpCvdDU2Kxv3tDkCW3IoSzAVBPNlbb70uTH3YKIA0IQhUAmDHPpCxpPxXe0CeSWM6ef7mpPpyonMaCj+rUHkLp5WvrjWuvCK/ewLkQS+Olsv8AaePhFVcHxZ+jbjyXQT0uPyrhGwCYXqV+w3US10OWd8y67v+8wpA8wrw3IWqH1Mv4e9l8j8LlNt7X1SuAu8Bjax3JcybSon4uCSQ3XjlhCEjqxb5KaJd+zd3pLLQx/ctG/ae+km/TU5SNTPDGcjjJjgAAtSbl8RI0bMFBU5zrBO83DjFusPaP0Se4mqZ8QmyzJ40y/HgigwqonC4mOEvvlVS0WmxcdY+dUwgGd9nbgd7vWZXJMKK/Sp3oQPpyaNiifW1aMbBQjmlj6GaAaO1MJTyVdPLWXwVV7kHoxLZ5jGNrozxLcTmK2701X2YV5wT8gcSMG9Y3N1+pt7jxMDsHvEo/Ebe7FG+UmigRpvPZtr+QNXMl2M5ezeS0wlbRqxknHyXsHxCGvrfijWFbxwxLgc39KBtFLfNGmoy/l18ykJJwTPFFwhGWQDbP08KWeleaH3bk/ZVAm5Foh7TU1wKVVLBIOiHJ0dYoMr5rZKjd5/z5En4pzYg/nKVR9kufuiFs6VNOvwUKiyqY9kXVRH5ef9mxEbMr9t13WHolbYs0FJqBzw=
+- provider: releases
+  skip_cleanup: true
+  on:
+    tags: true
+    condition: "$TRAVIS_RUST_VERSION = stable"
+    branch: master
+  file:
+  - target/release/youtube-subscriptions-*
+  api_key:
+    secure: j44ui6Tf7CQsbymoo8KPOJh75zRJPFYpzfX4iHYsQrsVrSFMeV9p95qmq22wnsLU3FL9P3svgCTyeMlD1Th4RvOyWjNowWI5zks+w+m3/NmJYm/4jXR9vTGhjATfz7L2IQWG+XfLUa8BZ21Ji/Tmk01hPxXGK69rCBbt0wH8h3OCoX6PvwLs5vwvd4qG+laavxwQv8P6BO4syFlPdQ8gpEMXgoqXQh8jfrwl+6XllycEojmeBeLdqZwfyABa6lbUILdl62WK3UNL/U6Omj1SXHJFv1ZIzwkfAVaGN0woWo9rGycvVsitRbuqWPHMkKVSwIAC4cDPTHK1QkTetvBBsklUMt0++QAvKPiwz28akkI+wYQY5kUWS8DIrnNWDzi3HHWMdpg6T7GnoO0xo9O6M0e9790FLDRb2j/I75h9ulEgun8RSZgY3lx5EjQ5LiYIeJFzR1FjPOeOX2buFUiFQIGl2A0ietvoW2jqob0g/CUzY8kXecGO3K+duYGCc3EGucX1SbpCqZVV37Z6bCyEvlx/ijnfvP8vVxXlxilbKOg3Mwy9IBdyeBMHaZSORI/thGqxJGjmA6LBADoKSLOXpBGChaUFnSzTJOQPbuLYkjA0U4Bta/xYdG9/92K15B4jpUzalTKMm85RxjWAeyVseUv6XcAviQntqwjV0In+ZLs=
