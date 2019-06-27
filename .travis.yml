@@ -10,8 +10,6 @@ matrix:
 os:
 - linux
 - osx
-before_deploy:
-  - mv target/release/youtube-subscriptions "target/release/youtube-subscriptions-$TRAVIS_TAG-$TRAVIS_OS_NAME"
 deploy:
   - provider: cargo
     skip_cleanup: true
