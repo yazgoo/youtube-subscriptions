@@ -11,14 +11,14 @@ os:
 - linux
 - osx
 deploy:
-- provider: cargo
-  skip_cleanup: true
-  on:
-    tags: true
-    condition: "$TRAVIS_RUST_VERSION = stable && $TRAVIS_OS_NAME = linux"
-    branch: master
-  token:
-    secure: XnpPfGnaAkfBNcWGF2jC4bOy2R8HR/10ZK0zEyY3PH5a1Fc6v5Q33G5nUSJYIpm5Qme0IgFYfijBErV/gmJTirVckOLbxCIQQqmVtQDKT9qaZhO8/nPKyYF8S+rIFTuAPmuHAQcoJAYRhNjj3SJKOxB/rSLRHIArg0ArHU/ZbcMIg5cOOBiOFlHxVI0LK8H5phLeI8WbVbr0Wz0+SbOlto8Bc+ltR87qtSk2o3b6cr8n7UCdIPpNXaSQjf73c8Gkm+aJn4R7tardEr/Vsk9C0PW0YL1IbbL9SHPFsXtpPI1IKtroMIFwEicuM4PRA1wQ9W0JFB0dQsXJ1dRxBCncC31xCcxIJRgQDKeK/aHelierJWYr78JLlvh8HLv2P2+dspO53mRPiXECXnQFCMBnx5Btj6HV5LiYKGBOj4opT0m+nSnUuiJNHduCJScsALe72CbVNTqOT2WW3Br4Mb58scbiQDkpmpy19NyeB7azNUpzjIUJ4HpZRTuYUd+4ThZeFDjWGGVKedOWQX2N0rp/Mev1D9FZ6dtljXvBG57SVjFMm/Y++6EWLqF7KfqKGR/oUQoV2NHE3PALjagX0CbLKrBZNebOKUfmhFsKT2fP6vALszYTg4f88aRsH9F+DXzPqsc8s1ifox1hFQ4qRvOOUU2Bd4wo9+kwI9HPVYkBFKo=
+#- provider: cargo
+#  skip_cleanup: true
+#  on:
+#    tags: true
+#    condition: "$TRAVIS_RUST_VERSION = stable && $TRAVIS_OS_NAME = linux"
+#    branch: master
+#  token:
+#    secure: XnpPfGnaAkfBNcWGF2jC4bOy2R8HR/10ZK0zEyY3PH5a1Fc6v5Q33G5nUSJYIpm5Qme0IgFYfijBErV/gmJTirVckOLbxCIQQqmVtQDKT9qaZhO8/nPKyYF8S+rIFTuAPmuHAQcoJAYRhNjj3SJKOxB/rSLRHIArg0ArHU/ZbcMIg5cOOBiOFlHxVI0LK8H5phLeI8WbVbr0Wz0+SbOlto8Bc+ltR87qtSk2o3b6cr8n7UCdIPpNXaSQjf73c8Gkm+aJn4R7tardEr/Vsk9C0PW0YL1IbbL9SHPFsXtpPI1IKtroMIFwEicuM4PRA1wQ9W0JFB0dQsXJ1dRxBCncC31xCcxIJRgQDKeK/aHelierJWYr78JLlvh8HLv2P2+dspO53mRPiXECXnQFCMBnx5Btj6HV5LiYKGBOj4opT0m+nSnUuiJNHduCJScsALe72CbVNTqOT2WW3Br4Mb58scbiQDkpmpy19NyeB7azNUpzjIUJ4HpZRTuYUd+4ThZeFDjWGGVKedOWQX2N0rp/Mev1D9FZ6dtljXvBG57SVjFMm/Y++6EWLqF7KfqKGR/oUQoV2NHE3PALjagX0CbLKrBZNebOKUfmhFsKT2fP6vALszYTg4f88aRsH9F+DXzPqsc8s1ifox1hFQ4qRvOOUU2Bd4wo9+kwI9HPVYkBFKo=
 - provider: releases
   skip_cleanup: true
   on:
