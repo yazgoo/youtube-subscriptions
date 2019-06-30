@@ -14,14 +14,12 @@ Especially well suited for Raspberry Pi.
 
 # installing
 
-```
-$ cargo install youtube-subscriptions
-```
+You can download a self-contained binary from [releases page](https://github.com/yazgoo/youtube-subscriptions/releases)
 
 # setup
 
 Download your [youtube subscriptions OPML](https://www.youtube.com/subscription_manager?action_takeout=1).
-and save them as the following file:
+and save it as the following file:
   ~/.config/youtube-subscriptions/subscription_manager
 
 
