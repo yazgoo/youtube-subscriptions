@@ -1,8 +1,9 @@
+---
 language: rust
 script:
   - cargo build --release
   - mv target/release/youtube-subscriptions target/release/youtube-subscriptions-$TRAVIS_OS_NAME
-  - [ $TRAVIS_OS_NAME = "linux" ] && ./cross-build-raspberry.sh && mv target/arm-unknown-linux-gnueabihf/release/youtube-subscriptions target/release/youtube-subscriptions-$TRAVIS_OS_NAME-arm
+  - sh -c '[ $TRAVIS_OS_NAME = "linux" ] && ./cross-build-raspberry.sh && mv target/arm-unknown-linux-gnueabihf/release/youtube-subscriptions target/release/youtube-subscriptions-$TRAVIS_OS_NAME-arm'
 services:
   - docker
 rust:
