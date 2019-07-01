@@ -1,8 +1,8 @@
 ---
 language: rust
 script:
-  - cargo build --release
-  - mv target/release/youtube-subscriptions target/release/youtube-subscriptions-$TRAVIS_OS_NAME
+  #- cargo build --release
+  #- mv target/release/youtube-subscriptions target/release/youtube-subscriptions-$TRAVIS_OS_NAME
   - sh -c '[ $TRAVIS_OS_NAME = "linux" ] && ./cross-build-raspberry.sh noregistry'
 services:
   - docker
@@ -14,7 +14,7 @@ matrix:
   fast_finish: true
 os:
 - linux
-- osx
+#- osx
 deploy:
 #- provider: cargo
 #  skip_cleanup: true
