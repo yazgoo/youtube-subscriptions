@@ -22,7 +22,6 @@ Download your [youtube subscriptions OPML](https://www.youtube.com/subscription_
 and save it as the following file:
   ~/.config/youtube-subscriptions/subscription_manager
 
-
 # usage
 
 press h for help.
