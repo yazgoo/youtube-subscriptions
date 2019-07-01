@@ -1,6 +1,10 @@
 set -x
 if [ "$1" = "travis" ] 
 then
+  if [ $TRAVIS_OS_NAME != "linux" ]
+  then
+    exit
+  fi
   mkdir -p target/release
   docker run  --entrypoint sh \
     ragnaroek/rust-raspberry:1.35.0 -c \
