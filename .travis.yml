@@ -14,6 +14,7 @@ matrix:
   fast_finish: true
 os:
 - linux
+- osx
 deploy:
 #- provider: cargo
 #  skip_cleanup: true
@@ -29,7 +30,7 @@ deploy:
     tags: true
     branch: master
   file:
-    - target/release/youtube-subscriptions-$TRAVIS_OS_NAME-arm 
     - target/release/youtube-subscriptions-$TRAVIS_OS_NAME
+    - target/release/youtube-subscriptions-$TRAVIS_OS_NAME-arm 
   api_key:
     secure: x1gIDW7GdZyGpbRX6WFafJwTAdhxXTesTT+QJrPagrGEBX4sj8Lt3SOjS6TFTEDjjBklUFK7tF1OwRcDWMaT335KMnY+p1glf6VhWm0CsByjhzeBwKYu87u0DIBB42zVoIIPW+PjLr7sej/HkbfJbOsZ6F/66zSR65zfwyLU28eoITPJfy3YAkBedqDBirOYiOwDopNRVoFCgZzYmkwiQBopVxmlznhcQteuMZUPH7KVLn+IM7kIIvsgZTAEsAxvjs0IwR/pqtgiEn09Ah0Hw5VW/9xl46NxobNyITwrB5HFKc9SXHFbs08ZQXhUZ3jwxoRIc1XHHGhHguqhXlvb3bzYmOcvpormcDDCInAPFFJWGWJKE9sHPUx650KUZqN5InSuRwZ+fV1UoJIeFLzoLUgQj/f9SRA12HOhnDekbi2AzF9oAQ2xxsbD1/8mzaeyXdiInMit1ACSvfikzmy34baZZsVjuYPqIe1xxizdLYbBEe0L7MIVohMbI4kR3q6lRqacJF51aCwVM3XXPAndeMfUrOmYMzYZFxN90y9852/WuEfN7TjYlGxiXv7rVfsg0mdwNNe+cD8sKsicg8w2AsdQ4IFWcn7rSEyFBeastuH8VSVPJYoNOXv3KXCndjHymCrOPsJWQAf5mW7+jTd7j0aD0W3SuFUqLrfpqrUUF+4=
