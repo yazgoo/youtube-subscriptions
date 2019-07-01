@@ -1,5 +1,5 @@
 set -x
-if [ "$1" = "noregistry" ] 
+if [ "$1" = "travis" ] 
 then
   mkdir -p target/release
   docker run  --entrypoint sh \
