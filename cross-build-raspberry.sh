@@ -1,6 +1,7 @@
 set -x
 if [ "$1" = "noregistry" ] 
 then
+  mkdir -p target/release
   docker run  --entrypoint sh \
     ragnaroek/rust-raspberry:1.35.0 -c \
       "mkdir -p /home/cross/project && \
