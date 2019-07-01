@@ -5,6 +5,9 @@ then
   docker run  --entrypoint sh \
     ragnaroek/rust-raspberry:1.35.0 -c \
       "mkdir -p /home/cross/project && \
+      mkdir -p /home/cross/project/src && \
+      echo '$(cat src/main.rs)' > /home/cross/project/src/main.rs && \
+      echo '$(cat Cargo.toml)' > /home/cross/project/Cargo.toml && \
       /home/cross/bin/run.sh build --release > /dev/null && \
       cat target/arm-unknown-linux-gnueabihf/release/youtube-subscriptions " > target/release/youtube-subscriptions-$TRAVIS_OS_NAME-arm
 else
