@@ -25,6 +25,51 @@ use crossterm_input::{input, RawScreen};
 use par_map::ParMap;
 use webbrowser;
 
+#[derive(Serialize, Deserialize)]
+struct AppConfig {
+    video_path: String,
+    cache_path: String,
+    players: Vec<Vec<String>>,
+}
+
+impl Default for AppConfig {
+    fn default() -> AppConfig {
+        AppConfig {
+            video_path: "/tmp".to_string(),
+            cache_path: "/tmp/yts.json".to_string(),
+            players: vec![
+                vec!["/usr/bin/omxplayer".to_string(), "-o".to_string(), "local".to_string()],
+                vec!["/Applications/VLC.app/Contents/MacOS/VLC".to_string(), "--play-and-exit".to_string(), "-f".to_string()],
+                vec!["/usr/bin/vlc".to_string(), "--play-and-exit".to_string(), "-f".to_string()]
+            ]
+        }
+    }
+}
+
+fn load_config() -> AppConfig {
+    match dirs::home_dir() {
+        Some(home) => {
+            match home.to_str() {
+                Some(s) => {
+                    let path = format!("{}/.config/youtube-subscriptions/config.json",
+                                       s);
+                    match fs::read_to_string(path) {
+                        Ok(s) => {
+                            let _res : AppConfig = json::from_str(s.as_str()).unwrap();
+                            _res
+                        },
+                        Err(_) =>
+                            AppConfig { ..Default::default() }
+                    }
+                }
+                None => AppConfig { ..Default::default() }
+            }
+        },
+        None =>
+            AppConfig { ..Default::default() }
+    }
+}
+
 fn get_subscriptions_xml() -> Result<String, Error> {
     match dirs::home_dir() {
         Some(home) =>
@@ -35,9 +80,11 @@ fn get_subscriptions_xml() -> Result<String, Error> {
                         return fs::read_to_string(path)
                     }
                     else {
+                        let url = "https://www.youtube.com/subscription_manager?action_takeout=1";
+                        let _res = webbrowser::open(&url);
                         panic!("configuration is missing
-please download: https://www.youtube.com/subscription_manager?action_takeout=1
-make it available as {} ", s)
+please download: {} (a browser window should be opened with it).
+make it available as {} ", url, s)
                     }
                 },
                 None =>
@@ -158,10 +205,10 @@ fn to_show_videos(videos: &mut Vec<Video>, start: usize, count: usize) -> Vec<Vi
     return result;
 }
 
-fn load(reload: bool) -> Option<Videos> {
+fn load(reload: bool, app_config: &AppConfig) -> Option<Videos> {
     match get_subscriptions_xml() {
         Ok(xml) => {
-            let path = "/tmp/yts.json";
+            let path = app_config.cache_path.as_str();
             if reload || !fs::metadata(path).is_ok() {
                 let videos = Videos { videos: get_videos(xml)};
                 let serialized = json::to_string(&videos);
@@ -251,7 +298,8 @@ struct YoutubeSubscribtions {
     start: usize,
     i: usize,
     toshow: Vec<Video>,
-    videos: Videos
+    videos: Videos,
+    app_config: AppConfig,
 }
 
 fn print_videos(toshow: &Vec<Video>) {
@@ -281,7 +329,7 @@ fn run_vlc(binary: &str, path: &String) {
     child1.wait().expect("run vlc failed");
 }
 
-fn play_video(path: &String) {
+fn play_video(path: &String, app_config: &AppConfig) {
     let omxplayer_path = "/usr/bin/omxplayer";
     if fs::metadata(&omxplayer_path).is_ok() {
         let mut child1 = Command::new(omxplayer_path)
@@ -332,12 +380,12 @@ fn download_video(path: &String, id: &String) {
     }
 }
 
-fn play(v: &Video) {
+fn play(v: &Video, app_config: &AppConfig) {
     match get_id(v) {
         Some(Some(id)) => {
-            let path = format!("/tmp/{}.mp4", id);
+            let path = format!("{}/{}.mp4", app_config.video_path, id);
             download_video(&path, &id);
-            play_video(&path);
+            play_video(&path, app_config);
             ()
         },
         _ => (),
@@ -418,7 +466,7 @@ impl YoutubeSubscribtions {
 
     fn hard_reload(&mut self) {
         debug(&"  updating list".to_string());
-        self.videos = load(true).unwrap();
+        self.videos = load(true, &self.app_config).unwrap();
         self.soft_reload();
         debug(&"".to_string());
     }
@@ -430,7 +478,7 @@ impl YoutubeSubscribtions {
 
     fn play_current(&mut self) {
         clear();
-        play(&self.toshow[self.i]);
+        play(&self.toshow[self.i], &self.app_config);
         self.clear_and_print_videos();
     }
 
@@ -496,7 +544,7 @@ impl YoutubeSubscribtions {
     }
 
     fn run(&mut self) {
-        self.videos = load(false).unwrap();
+        self.videos = load(false, &self.app_config).unwrap();
         self.start = 0;
         self.i = 0;
         self.first_page();
@@ -548,7 +596,8 @@ fn main() {
             start: 0,
             i: 0,
             toshow: vec![],
-            videos: Videos{videos: vec![]}
+            videos: Videos{videos: vec![]},
+            app_config: load_config(),
     };
     match args.len() {
         2 => {
