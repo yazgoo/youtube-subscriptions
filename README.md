@@ -28,6 +28,7 @@ press h for help.
 
 # configuration
 
+example:
 
 ```json
 {
@@ -45,6 +46,8 @@ press h for help.
 | video_path | directory where videos will be stored
 | cache_path | file path where video list will be stored
 | players    | list of players command for videos in order of priority
+
+`__HOME` will be substituted with the home path.
 
 # download mode
 
