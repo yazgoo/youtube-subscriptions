@@ -318,37 +318,17 @@ fn get_id(v: &Video) -> Option<Option<String>> {
                                                         page.split("?").collect::<Vec<&str>>().first().map( |s| s.to_string() ))
 }
 
-fn run_vlc(binary: &str, path: &String) {
-    let mut child1 = Command::new(&binary)
-        .arg("--play-and-exit")
-        .arg("-f")
-        .arg(path)
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child1.wait().expect("run vlc failed");
-}
-
 fn play_video(path: &String, app_config: &AppConfig) {
-    let omxplayer_path = "/usr/bin/omxplayer";
-    if fs::metadata(&omxplayer_path).is_ok() {
-        let mut child1 = Command::new(omxplayer_path)
-            .arg("-o")
-            .arg("local")
-            .arg(path)
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child1.wait().expect("run omxplayer failed");
-    }
-    else {
-        let macos_vlc = "/Applications/VLC.app/Contents/MacOS/VLC";
-        if fs::metadata(&macos_vlc).is_ok() {
-            run_vlc(&macos_vlc, &path);
-        }
-        else {
-            let vlc = "vlc";
-            run_vlc(&vlc, &path);
+    for player in &app_config.players {
+        if fs::metadata(&player[0]).is_ok() {
+            let mut child1 = Command::new(&player[0])
+                .args(&player[1..(player.len() - 1)])
+                .arg(path)
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child1.wait().expect("run player failed");
+            return
         }
     }
 }
