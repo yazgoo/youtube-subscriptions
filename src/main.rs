@@ -25,7 +25,7 @@ use crossterm_input::{input, RawScreen};
 use par_map::ParMap;
 use webbrowser;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct AppConfig {
     video_path: String,
     cache_path: String,
@@ -50,12 +50,14 @@ fn load_config() -> AppConfig {
     match dirs::home_dir() {
         Some(home) => {
             match home.to_str() {
-                Some(s) => {
+                Some(h) => {
                     let path = format!("{}/.config/youtube-subscriptions/config.json",
-                                       s);
+                                       h);
                     match fs::read_to_string(path) {
                         Ok(s) => {
-                            let _res : AppConfig = json::from_str(s.as_str()).unwrap();
+                            let mut _res : AppConfig = json::from_str(s.as_str()).unwrap();
+                            _res.video_path = _res.video_path.replace("__HOME", &h);
+                            _res.cache_path = _res.cache_path.replace("__HOME", &h);
                             _res
                         },
                         Err(_) =>
@@ -321,13 +323,15 @@ fn get_id(v: &Video) -> Option<Option<String>> {
 fn play_video(path: &String, app_config: &AppConfig) {
     for player in &app_config.players {
         if fs::metadata(&player[0]).is_ok() {
-            let mut child1 = Command::new(&player[0])
-                .args(&player[1..(player.len() - 1)])
-                .arg(path)
+
+            let mut child1 = Command::new(&player[0]);
+            for i in 1..player.len() {
+                child1.arg(&player[i]);
+            } 
+            child1.arg(path)
                 .stdout(Stdio::piped())
                 .spawn()
-                .unwrap();
-            child1.wait().expect("run player failed");
+                .unwrap().wait().expect("run player failed");
             return
         }
     }

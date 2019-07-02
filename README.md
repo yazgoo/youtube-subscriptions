@@ -26,6 +26,26 @@ and save it as the following file:
 
 press h for help.
 
+# configuration
+
+
+```json
+{
+  "video_path": "__HOME/.cache/yts/videos",
+  "cache_path": "__HOME/.cache/yts/yts.json",
+  "players": [
+    ["/usr/bin/mplayer", "-fs"]
+  ]
+}
+
+```
+
+| field      | description
+| ------     | ------------
+| video_path | directory where videos will be stored
+| cache_path | file path where video list will be stored
+| players    | list of players command for videos in order of priority
+
 # download mode
 
 You can update the subscriptions and download the last N videos by running.
