@@ -7,7 +7,6 @@ extern crate crossterm_input;
 extern crate crossterm;
 extern crate par_map;
 
-
 use miniserde::{json, Serialize, Deserialize};
 use sxd_document::parser;
 use sxd_xpath::{evaluate_xpath, Value, Factory};
@@ -252,6 +251,16 @@ fn hide_cursor() {
     io::stdout().flush().unwrap();
 }
 
+fn smcup() {
+    print!("\x1b[?1049h");
+    io::stdout().flush().unwrap();
+}
+
+fn rmcup() {
+    print!("\x1b[?1049l");
+    io::stdout().flush().unwrap();
+}
+
 fn clear() {
     print!("\x1b[2J");
     io::stdout().flush().unwrap();
@@ -406,6 +415,11 @@ fn print_info(v: &Video) {
     println!("{}", v.description);
 }
 
+fn quit() {
+    show_cursor();
+    rmcup();
+}
+
 impl YoutubeSubscribtions {
 
     fn clear_and_print_videos(&mut self) {
@@ -531,6 +545,7 @@ impl YoutubeSubscribtions {
         self.videos = load(false, &self.app_config).unwrap();
         self.start = 0;
         self.i = 0;
+        smcup();
         self.first_page();
         self.clear_and_print_videos();
         hide_cursor();
@@ -546,7 +561,7 @@ impl YoutubeSubscribtions {
                 Ok(c) => {
                     match c {
                         'q' => {
-                            show_cursor();
+                            quit();
                             break;
                         },
                         'j' | 'l' => self.i = jump(self.i, self.i + 1),
