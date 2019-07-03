@@ -28,6 +28,8 @@ use webbrowser;
 struct AppConfig {
     video_path: String,
     cache_path: String,
+    youtubedl_format: String,
+    video_extension: String,
     players: Vec<Vec<String>>,
 }
 
@@ -36,6 +38,8 @@ impl Default for AppConfig {
         AppConfig {
             video_path: "/tmp".to_string(),
             cache_path: "/tmp/yts.json".to_string(),
+            youtubedl_format: "[height <=? 360][ext = mp4]".to_string(),
+            video_extension: "mp4".to_string(),
             players: vec![
                 vec!["/usr/bin/omxplayer".to_string(), "-o".to_string(), "local".to_string()],
                 vec!["/Applications/VLC.app/Contents/MacOS/VLC".to_string(), "--play-and-exit".to_string(), "-f".to_string()],
@@ -346,11 +350,11 @@ fn play_video(path: &String, app_config: &AppConfig) {
     }
 }
 
-fn download_video(path: &String, id: &String) {
+fn download_video(path: &String, id: &String, app_config: &AppConfig) {
     if !fs::metadata(&path).is_ok() {
         match Command::new("youtube-dl")
             .arg("-f")
-            .arg("[height <=? 360][ext = mp4]")
+            .arg(&app_config.youtubedl_format)
             .arg("-o")
             .arg(&path)
             .arg("--")
@@ -376,8 +380,8 @@ fn download_video(path: &String, id: &String) {
 fn play(v: &Video, app_config: &AppConfig) {
     match get_id(v) {
         Some(Some(id)) => {
-            let path = format!("{}/{}.mp4", app_config.video_path, id);
-            download_video(&path, &id);
+            let path = format!("{}/{}.{}", app_config.video_path, id, app_config.video_extension);
+            download_video(&path, &id, app_config);
             play_video(&path, app_config);
             ()
         },
@@ -534,7 +538,7 @@ impl YoutubeSubscribtions {
             match get_id(video) {
                 Some(Some(id)) => {
                     let path = format!("/tmp/{}.mp4", id);
-                    download_video(&path, &id);
+                    download_video(&path, &id, &self.app_config);
                 },
                 _ => (),
             }

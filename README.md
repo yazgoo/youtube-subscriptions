@@ -34,6 +34,8 @@ example:
 {
   "video_path": "__HOME/.cache/yts/videos",
   "cache_path": "__HOME/.cache/yts/yts.json",
+  "youtubedl_format": "[height <=? 360][ext = mp4]",
+  "video_extension": "mp4",
   "players": [
     ["/usr/bin/mplayer", "-fs"]
   ]
@@ -41,11 +43,13 @@ example:
 
 ```
 
-| field      | description
-| ------     | ------------
-| video_path | directory where videos will be stored
-| cache_path | file path where video list will be stored
-| players    | list of players command for videos in order of priority
+| field            | description                                                                       | default value
+| ------           | -----------                                                                       | -------------
+| video_path       | directory where videos will be stored                                             | "/tmp"
+| cache_path       | file path where video list will be stored                                         | "/tmp/yts.json"
+| players          | list of players command for videos in order of priority                           |
+| youtubedl_format | see https://github.com/ytdl-org/youtube-dl/blob/master/README.md#format-selection | "[height <=? 360][ext = mp4]"
+| video_extension  | youtube-dl video extension as per format                                          | "mp4"
 
 `__HOME` will be substituted with the home path.
 
