@@ -38,18 +38,20 @@ example:
   "video_extension": "mp4",
   "players": [
     ["/usr/bin/mplayer", "-fs"]
-  ]
+  ],
+  "channel_ids": []
 }
 
 ```
 
-| field            | description                                                                                          | default value
-| ------           | -----------                                                                                          | -------------
-| video_path       | directory where videos will be stored                                                                | "/tmp"
-| cache_path       | file path where video list will be stored                                                            | "/tmp/yts.json"
-| players          | list of players command for videos in order of priority                                              |
-| youtubedl_format | see [youtube-dl doc](https://github.com/ytdl-org/youtube-dl/blob/master/README.md#format-selection) | "[height <=? 360][ext = mp4]"
-| video_extension  | youtube-dl video extension as per format                                                             | "mp4"
+| field            | description                                                                                         | default value
+| ------           | -----------                                                                                         | -------------
+| video_path       | directory where videos will be stored                                                               | `/tmp`
+| cache_path       | file path where video list will be stored                                                           | `/tmp/yts.json`
+| players          | list of players command for videos in order of priority                                             |
+| youtubedl_format | see [youtube-dl doc](https://github.com/ytdl-org/youtube-dl/blob/master/README.md#format-selection) | `[height <=? 360][ext = mp4]`
+| video_extension  | youtube-dl video extension as per format                                                            | `mp4`
+| channel_ids      | list of additional channel ids which will be also fetched                                           | `[]`
 
 `__HOME` will be substituted with the home path.
 

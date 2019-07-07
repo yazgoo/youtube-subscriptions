@@ -5,7 +5,6 @@ extern crate ureq;
 extern crate terminal_size;
 extern crate crossterm_input;
 extern crate crossterm;
-extern crate par_map;
 
 use miniserde::{json, Serialize, Deserialize};
 use sxd_document::parser;
@@ -21,7 +20,7 @@ use terminal_size::{Width, Height, terminal_size};
 use std::cmp::min;
 use std::process::{Command, Stdio};
 use crossterm_input::{input, RawScreen};
-use par_map::ParMap;
+use rayon::prelude::*;
 use webbrowser;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,6 +30,7 @@ struct AppConfig {
     youtubedl_format: String,
     video_extension: String,
     players: Vec<Vec<String>>,
+    channel_ids: Vec<String>,
 }
 
 impl Default for AppConfig {
@@ -44,7 +44,8 @@ impl Default for AppConfig {
                 vec!["/usr/bin/omxplayer".to_string(), "-o".to_string(), "local".to_string()],
                 vec!["/Applications/VLC.app/Contents/MacOS/VLC".to_string(), "--play-and-exit".to_string(), "-f".to_string()],
                 vec!["/usr/bin/vlc".to_string(), "--play-and-exit".to_string(), "-f".to_string()]
-            ]
+            ],
+            channel_ids: vec![],
         }
     }
 }
@@ -173,23 +174,25 @@ fn print_animation(i: usize) -> usize {
     ni + 1
 }
 
-fn get_videos(xml: String) -> Vec<Video> {
+fn get_videos(xml: String, additional_channel_ids: &Vec<String>) -> Vec<Video> {
     let package = parser::parse(xml.as_str()).expect("failed to parse XML");
     let document = package.as_document();
     let mut i = 0;
     match evaluate_xpath(&document, "//outline/@xmlUrl") {
         Ok(value) =>  {
             if let Value::Nodeset(urls) = value {
-                urls.iter().flat_map( |url| {
+                let mut urls_from_xml : Vec<String> = urls.iter().flat_map( |url| {
                     i = print_animation(i);
                     match url.attribute() {
                         Some(attribute) => Some(attribute.value().to_string()),
                         None => None
                     }
-                }
-                ).par_flat_map( |url|
-                       get_channel_videos(url)
-                ).collect()
+                }).collect::<Vec<String>>();
+                let urls_from_additional = additional_channel_ids.iter().map( |id| "https://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id);
+                urls_from_xml.extend(urls_from_additional);
+                urls_from_xml.par_iter().flat_map( |url|
+                       get_channel_videos(url.to_string())
+                ).collect::<Vec<Video>>()
             }
             else {
                 vec![]
@@ -215,7 +218,7 @@ fn load(reload: bool, app_config: &AppConfig) -> Option<Videos> {
         Ok(xml) => {
             let path = app_config.cache_path.as_str();
             if reload || !fs::metadata(path).is_ok() {
-                let videos = Videos { videos: get_videos(xml)};
+                let videos = Videos { videos: get_videos(xml, &app_config.channel_ids)};
                 let serialized = json::to_string(&videos);
                 fs::write(path, serialized).expect("writing videos json failed");
             }
@@ -293,7 +296,7 @@ fn debug(s: &String) {
 
 fn print_selector(i: usize) {
     move_cursor(i);
-    print!("┃\r");
+    print!("\x1b[1m|\x1b[0m\r");
     io::stdout().flush().unwrap();
 }
 
