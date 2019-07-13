@@ -166,14 +166,6 @@ fn get_channel_videos(channel_url: String) -> Vec<Video> {
     }
 }
 
-fn print_animation(i: usize) -> usize {
-    let animation = vec!['◜', '◝', '◞', '◟'];
-    let ni = i % animation.len();
-    print!("\r{}\r", animation[ni]);
-    io::stdout().flush().unwrap();
-    ni + 1
-}
-
 fn get_videos(xml: String, additional_channel_ids: &Vec<String>) -> Vec<Video> {
     let package = parser::parse(xml.as_str()).expect("failed to parse XML");
     let document = package.as_document();
@@ -182,7 +174,6 @@ fn get_videos(xml: String, additional_channel_ids: &Vec<String>) -> Vec<Video> {
         Ok(value) =>  {
             if let Value::Nodeset(urls) = value {
                 let mut urls_from_xml : Vec<String> = urls.iter().flat_map( |url| {
-                    i = print_animation(i);
                     match url.attribute() {
                         Some(attribute) => Some(attribute.value().to_string()),
                         None => None
@@ -288,7 +279,14 @@ fn move_to_bottom() {
     io::stdout().flush().unwrap();
 }
 
+fn clear_to_end_of_line() {
+    print!("\x1b[K");
+    io::stdout().flush().unwrap();
+}
+
 fn debug(s: &String) {
+    move_to_bottom();
+    clear_to_end_of_line();
     move_to_bottom();
     print!("{}", s);
     io::stdout().flush().unwrap();
@@ -470,10 +468,10 @@ impl YoutubeSubscribtions {
     }
 
     fn hard_reload(&mut self) {
-        debug(&"  updating list".to_string());
+        debug(&"updating video list...".to_string());
         self.videos = load(true, &self.app_config).unwrap();
-        self.soft_reload();
         debug(&"".to_string());
+        self.soft_reload();
     }
 
     fn first_page(&mut self) {
