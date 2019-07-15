@@ -378,12 +378,16 @@ fn download_video(path: &String, id: &String, app_config: &AppConfig) {
     }
 }
 
+fn play_id(id: &String, app_config: &AppConfig) {
+    let path = format!("{}/{}.{}", app_config.video_path, id, app_config.video_extension);
+    download_video(&path, &id, app_config);
+    play_video(&path, app_config);
+}
+
 fn play(v: &Video, app_config: &AppConfig) {
     match get_id(v) {
         Some(Some(id)) => {
-            let path = format!("{}/{}.{}", app_config.video_path, id, app_config.video_extension);
-            download_video(&path, &id, app_config);
-            play_video(&path, app_config);
+            play_id(&id, app_config);
             ()
         },
         _ => (),
@@ -511,6 +515,25 @@ impl YoutubeSubscribtions {
         self.clear_and_print_videos()
     }
 
+    fn command(&mut self) {
+        move_to_bottom();
+        print!(":");
+        io::stdout().flush().unwrap();
+	show_cursor();
+        let input = input();
+        let s = input.read_line().unwrap();
+        let s = s.split_whitespace().collect::<Vec<&str>>();
+	hide_cursor();
+        clear();
+        if s.len() == 2 {
+            match s[0] {
+                "o" => play_id(&s[1].to_string(), &self.app_config),
+                _ => ()
+            }
+        }
+        self.clear_and_print_videos()
+    }
+
     fn wait_key_press_and_soft_reload(&mut self) {
         {
             let input = input();
@@ -583,6 +606,7 @@ impl YoutubeSubscribtions {
                         'p' | '\x0D' => self.play_current(),
                         'o' => self.open_current(),
                         '/' => self.search(),
+                        ':' => self.command(),
                         _ => debug(&format!("key not supported (press h for help)")),
                     }
                 }
