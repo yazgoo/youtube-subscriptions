@@ -169,7 +169,6 @@ fn get_channel_videos(channel_url: String) -> Vec<Video> {
 fn get_videos(xml: String, additional_channel_ids: &Vec<String>) -> Vec<Video> {
     let package = parser::parse(xml.as_str()).expect("failed to parse XML");
     let document = package.as_document();
-    let mut i = 0;
     match evaluate_xpath(&document, "//outline/@xmlUrl") {
         Ok(value) =>  {
             if let Value::Nodeset(urls) = value {
@@ -325,7 +324,7 @@ fn print_videos(toshow: &Vec<Video>) {
         let published = video.published.split("T").collect::<Vec<&str>>();
         let whitespaces = " ".repeat(max - video.channel.chars().count());
         let s = format!("  \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}", published[0][5..10].to_string(), video.channel, whitespaces, video.title);
-        println!("{}", s.chars().take(min(s.len(), cols-4+9+9)).collect::<String>());
+        println!("{}", s.chars().take(min(s.chars().count(), cols-4+9+9+2)).collect::<String>());
     }
 }
 
