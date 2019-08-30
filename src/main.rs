@@ -44,7 +44,7 @@ impl Default for AppConfig {
                 vec!["/usr/bin/omxplayer".to_string(), "-o".to_string(), "local".to_string()],
                 vec!["/Applications/VLC.app/Contents/MacOS/VLC".to_string(), "--play-and-exit".to_string(), "-f".to_string()],
                 vec!["/usr/bin/vlc".to_string(), "--play-and-exit".to_string(), "-f".to_string()],
-                vec!["/usr/bin/mplayer".to_string(), "-fs".to_string()]
+                vec!["/usr/bin/mplayer".to_string(), "-really-quiet".to_string(), "-fs".to_string()]
             ],
             channel_ids: vec![],
         }
