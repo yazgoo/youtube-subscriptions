@@ -334,6 +334,24 @@ fn get_id(v: &Video) -> Option<Option<String>> {
                                                         page.split("?").collect::<Vec<&str>>().first().map( |s| s.to_string() ))
 }
 
+fn read_command_output(command: &mut Command) {
+    match command.stdout(Stdio::piped())
+        .spawn() {
+            Ok(spawn) => {
+                match spawn.stdout {
+                    Some(stdout) => {
+                        for byte in stdout.bytes() {
+                            print!("{}", byte.unwrap() as char);
+                            io::stdout().flush().unwrap();
+                        }
+                    },
+                    None => ()
+                }
+            },
+            Err(_) => ()
+        }
+}
+
 fn play_video(path: &String, app_config: &AppConfig) {
     for player in &app_config.players {
         if fs::metadata(&player[0]).is_ok() {
@@ -342,10 +360,7 @@ fn play_video(path: &String, app_config: &AppConfig) {
             for i in 1..player.len() {
                 child1.arg(&player[i]);
             } 
-            child1.arg(path)
-                .stdout(Stdio::piped())
-                .spawn()
-                .unwrap().wait().expect("run player failed");
+            read_command_output(child1.arg(path));
             return
         }
     }
@@ -353,28 +368,13 @@ fn play_video(path: &String, app_config: &AppConfig) {
 
 fn download_video(path: &String, id: &String, app_config: &AppConfig) {
     if !fs::metadata(&path).is_ok() {
-        match Command::new("youtube-dl")
+        read_command_output(Command::new("youtube-dl")
             .arg("-f")
             .arg(&app_config.youtubedl_format)
             .arg("-o")
             .arg(&path)
             .arg("--")
-            .arg(&id)
-            .stdout(Stdio::piped())
-            .spawn() {
-                Ok(spawn) => {
-                    match spawn.stdout {
-                        Some(stdout) => {
-                            for byte in stdout.bytes() {
-                                print!("{}", byte.unwrap() as char);
-                                io::stdout().flush().unwrap();
-                            }
-                        },
-                        None => ()
-                    }
-                },
-                Err(_) => ()
-            }
+            .arg(&id))
     }
 }
 
