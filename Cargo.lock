@@ -639,7 +639,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "youtube-subscriptions"
-version = "0.1.0"
+version = "0.2.39"
 dependencies = [
  "crossterm 0.9.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "crossterm_input 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
