@@ -91,7 +91,7 @@ fn get_subscriptions_xml() -> Result<String, Error> {
                         let _res = webbrowser::open(&url);
                         panic!("configuration is missing
 please download: {} (a browser window should be opened with it).
-make it available as {} ", url, s)
+make it available as {} ", url, path)
                     }
                 },
                 None =>
