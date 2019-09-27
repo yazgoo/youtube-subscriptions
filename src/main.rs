@@ -197,11 +197,19 @@ fn get_videos(xml: String, additional_channel_ids: &Vec<String>) -> Vec<Video> {
     
 }
 
-fn to_show_videos(videos: &mut Vec<Video>, start: usize, count: usize) -> Vec<Video> {
+fn to_show_videos(videos: &mut Vec<Video>, start: usize, count: usize, filter: &String) -> Vec<Video> {
     videos.sort_by(|a, b| b.published.cmp(&a.published));
-    let mut result = videos[start..count].to_vec();
-    result.reverse();
-    return result;
+    let filtered_videos = videos.iter().filter(|video| 
+        video.title.contains(filter.as_str()) || video.channel.contains(filter.as_str()) 
+    ).cloned().collect::<Vec<Video>>();
+    if filtered_videos.len() > start {
+        let new_count = std::cmp::min(count, filtered_videos.len() - start);
+        let mut result = filtered_videos[start..new_count].to_vec();
+        result.reverse();
+        return result;
+    } else {
+        return vec![];
+    }
 }
 
 fn load(reload: bool, app_config: &AppConfig) -> Option<Videos> {
@@ -312,6 +320,7 @@ fn jump(i: usize, new_i: usize) -> usize {
 struct YoutubeSubscribtions {
     n: usize,
     start: usize,
+    filter: String,
     i: usize,
     toshow: Vec<Video>,
     videos: Videos,
@@ -411,6 +420,7 @@ fn print_help() {
   h,?      prints this help
   i        prints video information
   /        search
+  f        filter
   p,enter  plays selected video
   o        open selected video in browser
   ")
@@ -433,6 +443,7 @@ impl YoutubeSubscribtions {
 
     fn clear_and_print_videos(&mut self) {
         clear();
+        move_cursor(0);
         print_videos(&self.toshow)
     }
 
@@ -454,7 +465,7 @@ impl YoutubeSubscribtions {
                 self.start = self.start - self.n;
             }
         }
-        self.toshow = to_show_videos(&mut self.videos.videos, self.start, self.start + self.n);
+        self.toshow = to_show_videos(&mut self.videos.videos, self.start, self.start + self.n, &self.filter);
         self.i = 0;
         self.clear_and_print_videos()
     }
@@ -480,19 +491,24 @@ impl YoutubeSubscribtions {
 
     fn first_page(&mut self) {
         self.n = get_lines();
-        self.toshow = to_show_videos(&mut self.videos.videos, self.start, self.n);
+        self.toshow = to_show_videos(&mut self.videos.videos, self.start, self.n, &self.filter);
     }
 
     fn play_current(&mut self) {
-        clear();
-        play(&self.toshow[self.i], &self.app_config);
-        self.clear_and_print_videos();
+        if self.i < self.toshow.len() {
+            clear();
+            move_cursor(0);
+            play(&self.toshow[self.i], &self.app_config);
+            self.clear_and_print_videos();
+        }
     }
 
     fn open_current(&mut self) {
-        let url = &self.toshow[self.i].url;
-        debug(&format!("opening {}", &url));
-        let _res = webbrowser::open(&url);
+        if self.i < self.toshow.len() {
+            let url = &self.toshow[self.i].url;
+            debug(&format!("opening {}", &url));
+            let _res = webbrowser::open(&url);
+        }
     }
 
 
@@ -505,23 +521,29 @@ impl YoutubeSubscribtions {
         0
     }
 
-    fn search(&mut self) {
+    fn input_with_prefix(&mut self, start_symbol: &str) -> String {
         move_to_bottom();
-        print!("/");
+        print!("{}", start_symbol);
         io::stdout().flush().unwrap();
         let input = input();
-        let s = input.read_line().unwrap();
+        input.read_line().unwrap()
+    }
+
+    fn search(&mut self) {
+        let s = self.input_with_prefix("/");
         self.i = self.find(s);
         self.clear_and_print_videos()
     }
 
+    fn filter(&mut self) {
+        let s = self.input_with_prefix("|");
+        self.filter = s;
+        self.move_page(0);
+        self.clear_and_print_videos()
+    }
+
     fn command(&mut self) {
-        move_to_bottom();
-        print!(":");
-        io::stdout().flush().unwrap();
-	show_cursor();
-        let input = input();
-        let s = input.read_line().unwrap();
+        let s = self.input_with_prefix(":");
         let s = s.split_whitespace().collect::<Vec<&str>>();
 	hide_cursor();
         clear();
@@ -545,9 +567,11 @@ impl YoutubeSubscribtions {
     }
 
     fn info(&mut self) {
-        clear();
-        print_info(&self.toshow[self.i]);
-        self.wait_key_press_and_soft_reload()
+        if self.i < self.toshow.len() {
+            clear();
+            print_info(&self.toshow[self.i]);
+            self.wait_key_press_and_soft_reload()
+        }
     }
 
     fn help(&mut self) {
@@ -607,6 +631,7 @@ impl YoutubeSubscribtions {
                         'o' => self.open_current(),
                         '/' => self.search(),
                         ':' => self.command(),
+                        'f' => self.filter(),
                         _ => debug(&format!("key not supported (press h for help)")),
                     }
                 }
@@ -622,6 +647,7 @@ fn main() {
     let mut yts = YoutubeSubscribtions{
             n: 0,
             start: 0,
+            filter: "".to_string(),
             i: 0,
             toshow: vec![],
             videos: Videos{videos: vec![]},
