@@ -15,6 +15,7 @@ use std::env;
 use std::io;
 use std::io::{Read, Write};
 use std::io::Error;
+use std::io::ErrorKind::NotFound;
 use sxd_document::dom::Element;
 use terminal_size::{Width, Height, terminal_size};
 use std::cmp::min;
@@ -317,6 +318,12 @@ fn jump(i: usize, new_i: usize) -> usize {
     return new_i;
 }
 
+fn pause() {
+    let input = input();
+    let _screen = RawScreen::into_raw_mode();
+    let _c = input.read_char();
+}
+
 struct YoutubeSubscribtions {
     n: usize,
     start: usize,
@@ -343,7 +350,7 @@ fn get_id(v: &Video) -> Option<Option<String>> {
                                                         page.split("?").collect::<Vec<&str>>().first().map( |s| s.to_string() ))
 }
 
-fn read_command_output(command: &mut Command) {
+fn read_command_output(command: &mut Command, binary: &String) {
     match command.stdout(Stdio::piped())
         .spawn() {
             Ok(spawn) => {
@@ -357,7 +364,14 @@ fn read_command_output(command: &mut Command) {
                     None => ()
                 }
             },
-            Err(_) => ()
+            Err(e) => {
+                if let NotFound = e.kind() {
+                    println!("`{}` was not found: maybe you should install it ?", binary)
+                } else {
+                    println!("error while runnnig {} : {}", binary, e);
+                }
+                pause();
+            }
         }
 }
 
@@ -369,7 +383,7 @@ fn play_video(path: &String, app_config: &AppConfig) {
             for i in 1..player.len() {
                 child1.arg(&player[i]);
             } 
-            read_command_output(child1.arg(path));
+            read_command_output(child1.arg(path), &player[0]);
             return
         }
     }
@@ -383,7 +397,7 @@ fn download_video(path: &String, id: &String, app_config: &AppConfig) {
             .arg("-o")
             .arg(&path)
             .arg("--")
-            .arg(&id))
+            .arg(&id), &"youtube-dl".to_string())
     }
 }
 
@@ -557,11 +571,7 @@ impl YoutubeSubscribtions {
     }
 
     fn wait_key_press_and_soft_reload(&mut self) {
-        {
-            let input = input();
-            let _screen = RawScreen::into_raw_mode();
-            let _c = input.read_char();
-        }
+        pause();
         clear();
         self.soft_reload();
     }
