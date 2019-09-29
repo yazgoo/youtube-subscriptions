@@ -3,7 +3,7 @@
 terminal UI for viewing youtube subscriptions.
 Especially well suited for Raspberry Pi.
 
-<a href=https://asciinema.org/a/6pXhdC6yCrAU7LrtpeUMPhMA0>
+<a href=https://youtu.be/WVZpqXBmB3U>
 <img width=250 src="https://asciinema.org/a/6pXhdC6yCrAU7LrtpeUMPhMA0.svg"/>
 </a>
 
