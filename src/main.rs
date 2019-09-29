@@ -200,19 +200,15 @@ fn get_videos(xml: String, additional_channel_ids: &Vec<String>) -> Vec<Video> {
     
 }
 
-fn to_show_videos(videos: &mut Vec<Video>, start: usize, count: usize, filter: &String) -> Vec<Video> {
+fn to_show_videos(videos: &mut Vec<Video>, start: usize, end: usize, filter: &String) -> Vec<Video> {
     videos.sort_by(|a, b| b.published.cmp(&a.published));
     let filtered_videos = videos.iter().filter(|video| 
         video.title.contains(filter.as_str()) || video.channel.contains(filter.as_str()) 
     ).cloned().collect::<Vec<Video>>();
-    if filtered_videos.len() > start {
-        let new_count = std::cmp::min(count, filtered_videos.len() - start);
-        let mut result = filtered_videos[start..new_count].to_vec();
-        result.reverse();
-        return result;
-    } else {
-        return vec![];
-    }
+    let new_end = std::cmp::min(end, filtered_videos.len());
+    let mut result = filtered_videos[start..new_end].to_vec();
+    result.reverse();
+    return result;
 }
 
 fn load(reload: bool, app_config: &AppConfig) -> Option<Videos> {
