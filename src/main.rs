@@ -20,7 +20,8 @@ use sxd_document::dom::Element;
 use terminal_size::{Width, Height, terminal_size};
 use std::cmp::min;
 use std::process::{Command, Stdio};
-use crossterm_input::{input, RawScreen};
+use crossterm_input::{input, RawScreen, InputEvent};
+use crossterm_input::KeyEvent::{Char, Down, Up, Left, Right};
 use rayon::prelude::*;
 use webbrowser;
 
@@ -422,22 +423,22 @@ fn print_help() {
     println!("
   youtube-subscriptions: a tool to view your youtube subscriptions in a terminal
 
-  q        quit
-  j,l      move down
-  k        move up
-  g,H      go to top
-  G,L      go to bottom
-  M        go to middle
-  r,$      soft refresh
-  P        previous page
-  N        next page
-  R        full refresh (fetches video list)
-  h,?      prints this help
-  i        prints video information
-  /        search
-  f        filter
-  p,enter  plays selected video
-  o        open selected video in browser
+  q          quit
+  j,l,down   move down
+  k,up       move up
+  g,H        go to top
+  G,L        go to bottom
+  M          go to middle
+  r,$,left   soft refresh
+  P          previous page
+  N          next page
+  R          full refresh (fetches video list)
+  h,?        prints this help
+  i,right    prints video information
+  /          search
+  f          filter
+  p,enter    plays selected video
+  o          open selected video in browser
   ")
 }
 
@@ -618,36 +619,42 @@ impl YoutubeSubscribtions {
             let result;
             {
                 let _screen = RawScreen::into_raw_mode();
-                result = input.read_char();
+                let mut stdin = input.read_sync();
+                result = stdin.next();
             }
             match result {
-                Ok(c) => {
-                    match c {
-                        'q' => {
-                            quit();
-                            break;
+                Some(key_event) => {
+                    match key_event {
+                        InputEvent::Keyboard(event) => {
+                            match event {
+                                Char('q') => {
+                                    quit();
+                                    break;
+                                },
+                                Char('j') | Char('l') | Down => self.i = jump(self.i, self.i + 1),
+                                Char('k') | Up => self.i = jump(self.i, if self.i > 0 { self.i - 1 } else { self.n - 1 }),
+                                Char('g') | Char('H') => self.i = jump(self.i, 0),
+                                Char('M') => self.i = jump(self.i, self.n / 2),
+                                Char('G') | Char('L') => self.i = jump(self.i, self.n - 1),
+                                Char('r') | Char('$') | Left => self.soft_reload(),
+                                Char('P') => self.previous_page(),
+                                Char('N') => self.next_page(),
+                                Char('R') => self.hard_reload(),
+                                Char('h') | Char('?') => self.help(),
+                                Char('i') | Right => self.info(),
+                                Char('p') | Char('\n') => self.play_current(),
+                                Char('o') => self.open_current(),
+                                Char('/') => self.search(),
+                                Char(':') => self.command(),
+                                Char('f') => self.filter(),
+                                _ => debug(&format!("key not supported (press h for help)")),
+                            }
                         },
-                        'j' | 'l' => self.i = jump(self.i, self.i + 1),
-                        'k' => self.i = jump(self.i, if self.i > 0 { self.i - 1 } else { self.n - 1 }),
-                        'g' | 'H' => self.i = jump(self.i, 0),
-                        'M' => self.i = jump(self.i, self.n / 2),
-                        'G' | 'L' => self.i = jump(self.i, self.n - 1),
-                        'r' | '$' => self.soft_reload(),
-                        'P' => self.previous_page(),
-                        'N' => self.next_page(),
-                        'R' => self.hard_reload(),
-                        'h' | '?' => self.help(),
-                        'i' => self.info(),
-                        'p' | '\x0D' => self.play_current(),
-                        'o' => self.open_current(),
-                        '/' => self.search(),
-                        ':' => self.command(),
-                        'f' => self.filter(),
-                        _ => debug(&format!("key not supported (press h for help)")),
+                        _ => ()
                     }
                 }
-                Err(_) => (),
-            };
+                _ => ()
+            }
             self.i = self.i % self.n;
         };
     }
