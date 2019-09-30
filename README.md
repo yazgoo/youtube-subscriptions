@@ -28,6 +28,10 @@ press h for help.
 
 # configuration
 
+You can optionnaly add a user configuration at
+
+`$HOME/.config/youtube-subscriptions/config.json`
+
 example:
 
 ```json
