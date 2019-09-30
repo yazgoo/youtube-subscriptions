@@ -5,8 +5,9 @@ extern crate ureq;
 extern crate terminal_size;
 extern crate crossterm_input;
 extern crate crossterm;
+extern crate serde;
 
-use miniserde::{json, Serialize, Deserialize};
+use serde::{Serialize, Deserialize};
 use sxd_document::parser;
 use sxd_xpath::{evaluate_xpath, Value, Factory};
 use sxd_xpath::context::Context;
@@ -26,6 +27,10 @@ use crossterm_input::KeyEvent::{Char, Down, Up, Left, Right};
 use rayon::prelude::*;
 use webbrowser;
 
+fn default_as_true() -> bool {
+    true
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 struct AppConfig {
     video_path: String,
@@ -34,6 +39,8 @@ struct AppConfig {
     video_extension: String,
     players: Vec<Vec<String>>,
     channel_ids: Vec<String>,
+    #[serde(default = "default_as_true")]
+    mpv_mode: bool,
 }
 
 impl Default for AppConfig {
@@ -51,6 +58,7 @@ impl Default for AppConfig {
                 vec!["/usr/bin/mplayer".to_string(), "-really-quiet".to_string(), "-fs".to_string()],
             ],
             channel_ids: vec![],
+            mpv_mode: true,
         }
     }
 }
@@ -64,21 +72,25 @@ fn load_config() -> AppConfig {
                                        h);
                     match fs::read_to_string(path) {
                         Ok(s) => {
-                            let mut _res : AppConfig = json::from_str(s.as_str()).unwrap();
-                            _res.video_path = _res.video_path.replace("__HOME", &h);
-                            match fs::create_dir_all(&_res.video_path) {
-                                Ok(_) => {
-                                    _res.cache_path = _res.cache_path.replace("__HOME", &h);
-                                    match Path::new(&_res.cache_path).parent() {
-                                        Some(dirname) => match fs::create_dir_all(&dirname) {
-                                            Ok(_) => _res,
-                                            Err(e) => panic!("error while creating cache directory for {}: {:?}", &_res.cache_path, e)
+                            match serde_json::from_str::<AppConfig>(s.as_str()) {
+                                Ok(mut _res) => {
+                                    _res.video_path = _res.video_path.replace("__HOME", &h);
+                                    match fs::create_dir_all(&_res.video_path) {
+                                        Ok(_) => {
+                                            _res.cache_path = _res.cache_path.replace("__HOME", &h);
+                                            match Path::new(&_res.cache_path).parent() {
+                                                Some(dirname) => match fs::create_dir_all(&dirname) {
+                                                    Ok(_) => _res,
+                                                    Err(e) => panic!("error while creating cache directory for {}: {:?}", &_res.cache_path, e)
+                                                }
+                                                None => panic!("failed to find dirname of {}", &_res.cache_path),
+                                            }
                                         }
-                                        None => panic!("failed to find dirname of {}", &_res.cache_path),
+                                        Err(e) =>
+                                            panic!("error while creating video path {}: {:?}", &_res.video_path, e)
                                     }
                                 }
-                                Err(e) =>
-                                    panic!("error while creating video path {}: {:?}", &_res.video_path, e)
+                                Err(e) => panic!("error parsing configuration: {:?}", e)
                             }
                         },
                         Err(_) =>
@@ -230,12 +242,12 @@ fn load(reload: bool, app_config: &AppConfig) -> Option<Videos> {
             let path = app_config.cache_path.as_str();
             if reload || !fs::metadata(path).is_ok() {
                 let videos = Videos { videos: get_videos(xml, &app_config.channel_ids)};
-                let serialized = json::to_string(&videos);
+                let serialized = serde_json::to_string(&videos).unwrap();
                 fs::write(path, serialized).expect("writing videos json failed");
             }
             match fs::read_to_string(path) {
                 Ok(s) => 
-                    Some(json::from_str(s.as_str()).unwrap()),
+                    Some(serde_json::from_str(s.as_str()).unwrap()),
                 Err(_) =>
                     None
             }
@@ -413,9 +425,26 @@ fn download_video(path: &String, id: &String, app_config: &AppConfig) {
 }
 
 fn play_id(id: &String, app_config: &AppConfig) {
-    let path = format!("{}/{}.{}", app_config.video_path, id, app_config.video_extension);
-    download_video(&path, &id, app_config);
-    play_video(&path, app_config);
+    let mpv = "/usr/bin/mpv".to_string();
+    if app_config.mpv_mode && fs::metadata(&mpv).is_ok() {
+        let url = format!("https://www.youtube.com/watch?v={}", id);
+        let message = format!("playing {} with mpv...", url);
+        debug(&message);
+        read_command_output(
+            Command::new(&mpv)
+            .arg("-fs")
+            .arg("-really-quiet")
+            .arg("--ytdl-format")
+            .arg(&app_config.youtubedl_format)
+            .arg(url)
+            , &mpv);
+    } else {
+        clear();
+        move_cursor(0);
+        let path = format!("{}/{}.{}", app_config.video_path, id, app_config.video_extension);
+        download_video(&path, &id, app_config);
+        play_video(&path, app_config);
+    }
 }
 
 fn play(v: &Video, app_config: &AppConfig) {
@@ -521,8 +550,6 @@ impl YoutubeSubscribtions {
 
     fn play_current(&mut self) {
         if self.i < self.toshow.len() {
-            clear();
-            move_cursor(0);
             play(&self.toshow[self.i], &self.app_config);
             self.clear_and_print_videos();
         }
