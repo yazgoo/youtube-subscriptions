@@ -380,18 +380,42 @@ fn get_id(v: &Video) -> Option<Option<String>> {
                                                         page.split("?").collect::<Vec<&str>>().first().map( |s| s.to_string() ))
 }
 
+fn print_press_any_key_and_pause() {
+    println!("press any key to continue...");
+    pause();
+}
+
 fn read_command_output(command: &mut Command, binary: &String) {
     match command.stdout(Stdio::piped())
         .spawn() {
-            Ok(spawn) => {
-                match spawn.stdout {
-                    Some(stdout) => {
-                        for byte in stdout.bytes() {
-                            print!("{}", byte.unwrap() as char);
-                            io::stdout().flush().unwrap();
+            Ok(mut child) => {
+                let stdout_option = child.stdout.take();
+                if stdout_option.is_some() {
+                    let stdout = stdout_option.unwrap();
+                    for byte in stdout.bytes() {
+                        print!("{}", byte.unwrap() as char);
+                        io::stdout().flush().unwrap();
+                    }
+                }
+                let stderr_option = child.stderr.take();
+                if stderr_option.is_some() {
+                    let stderr = stderr_option.unwrap();
+                    for byte in stderr.bytes() {
+                        print!("{}", byte.unwrap() as char);
+                        io::stdout().flush().unwrap();
+                    }
+                }
+                match child.wait() {
+                    Ok(status) => { 
+                        if !status.success() {
+                            println!("error while running {:?}, return status: {:?}", command, status.code());
+                            print_press_any_key_and_pause()
                         }
                     },
-                    None => ()
+                    Err(e) => {
+                        println!("error while running {:?}, error: {:?}", command, e);
+                        print_press_any_key_and_pause()
+                    }
                 }
             },
             Err(e) => {
@@ -400,7 +424,7 @@ fn read_command_output(command: &mut Command, binary: &String) {
                 } else {
                     println!("error while runnnig {} : {}", binary, e);
                 }
-                pause();
+                print_press_any_key_and_pause()
             }
         }
 }
