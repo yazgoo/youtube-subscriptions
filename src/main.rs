@@ -13,6 +13,7 @@ use sxd_xpath::context::Context;
 use std::fs;
 use std::env;
 use std::io;
+use std::path::Path;
 use std::io::{Read, Write};
 use std::io::Error;
 use std::io::ErrorKind::NotFound;
@@ -65,8 +66,20 @@ fn load_config() -> AppConfig {
                         Ok(s) => {
                             let mut _res : AppConfig = json::from_str(s.as_str()).unwrap();
                             _res.video_path = _res.video_path.replace("__HOME", &h);
-                            _res.cache_path = _res.cache_path.replace("__HOME", &h);
-                            _res
+                            match fs::create_dir_all(&_res.video_path) {
+                                Ok(_) => {
+                                    _res.cache_path = _res.cache_path.replace("__HOME", &h);
+                                    match Path::new(&_res.cache_path).parent() {
+                                        Some(dirname) => match fs::create_dir_all(&dirname) {
+                                            Ok(_) => _res,
+                                            Err(e) => panic!("error while creating cache directory for {}: {:?}", &_res.cache_path, e)
+                                        }
+                                        None => panic!("failed to find dirname of {}", &_res.cache_path),
+                                    }
+                                }
+                                Err(e) =>
+                                    panic!("error while creating video path {}: {:?}", &_res.video_path, e)
+                            }
                         },
                         Err(_) =>
                             AppConfig { ..Default::default() }
