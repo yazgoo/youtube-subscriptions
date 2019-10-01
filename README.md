@@ -43,7 +43,8 @@ example:
   "players": [
     ["/usr/bin/mplayer", "-fs"]
   ],
-  "channel_ids": []
+  "channel_ids": [],
+  "mpv_mode": true
 }
 
 ```
@@ -56,6 +57,7 @@ example:
 | youtubedl_format | see [youtube-dl doc](https://github.com/ytdl-org/youtube-dl/blob/master/README.md#format-selection) | `[height <=? 360][ext = mp4]`
 | video_extension  | youtube-dl video extension as per format                                                            | `mp4`
 | channel_ids      | list of additional channel ids which will be also fetched                                           | `[]`
+| mpv_mode         | try and start mpv to play the youtubee video first                                                  | `true`
 
 `__HOME` will be substituted with the home path.
 
