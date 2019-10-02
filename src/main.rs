@@ -27,8 +27,12 @@ use crossterm_input::KeyEvent::{Char, Down, Up, Left, Right};
 use rayon::prelude::*;
 use webbrowser;
 
-fn default_as_true() -> bool {
+fn default_mpv_mode() -> bool {
     true
+}
+
+fn default_mpv_path() -> String {
+    "/usr/bin/mpv".to_string()
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -39,8 +43,10 @@ struct AppConfig {
     video_extension: String,
     players: Vec<Vec<String>>,
     channel_ids: Vec<String>,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_mpv_mode")]
     mpv_mode: bool,
+    #[serde(default = "default_mpv_path")]
+    mpv_path: String,
 }
 
 impl Default for AppConfig {
@@ -58,7 +64,8 @@ impl Default for AppConfig {
                 vec!["/usr/bin/mplayer".to_string(), "-really-quiet".to_string(), "-fs".to_string()],
             ],
             channel_ids: vec![],
-            mpv_mode: true,
+            mpv_mode: default_mpv_mode(),
+            mpv_path: default_mpv_path(),
         }
     }
 }
@@ -425,19 +432,18 @@ fn download_video(path: &String, id: &String, app_config: &AppConfig) {
 }
 
 fn play_id(id: &String, app_config: &AppConfig) {
-    let mpv = "/usr/bin/mpv".to_string();
-    if app_config.mpv_mode && fs::metadata(&mpv).is_ok() {
+    if app_config.mpv_mode && fs::metadata(&app_config.mpv_path).is_ok() {
         let url = format!("https://www.youtube.com/watch?v={}", id);
         let message = format!("playing {} with mpv...", url);
         debug(&message);
         read_command_output(
-            Command::new(&mpv)
+            Command::new(&app_config.mpv_path)
             .arg("-fs")
             .arg("-really-quiet")
             .arg("--ytdl-format")
             .arg(&app_config.youtubedl_format)
             .arg(url)
-            , &mpv);
+            , &app_config.mpv_path);
     } else {
         clear();
         move_cursor(0);
