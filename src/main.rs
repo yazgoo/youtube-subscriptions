@@ -53,7 +53,7 @@ impl Default for AppConfig {
     fn default() -> AppConfig {
         AppConfig {
             video_path: "/tmp".to_string(),
-            cache_path: "/tmp/yts.json".to_string(),
+            cache_path: "__HOME/.cache/yts/yts.json".to_string(),
             youtubedl_format: "[height <=? 360][ext = mp4]".to_string(),
             video_extension: "mp4".to_string(),
             players: vec![
@@ -138,6 +138,22 @@ make it available as {} ", url, path)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+enum Flag {
+    Read,
+}
+
+fn flag_to_string(flag: &Option<Flag>) -> String {
+    match flag {
+        Some(Flag::Read) => "✓".to_string(),
+        None => " ".to_string(),
+    }
+}
+
+fn default_flag() -> Option<Flag> {
+    None
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct Video {
     channel: String,
     title: String,
@@ -145,6 +161,8 @@ struct Video {
     url: String,
     published: String,
     description: String,
+    #[serde(default = "default_flag")]
+    flag: Option<Flag>
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -181,6 +199,7 @@ fn get_channel_videos(channel_url: String) -> Vec<Video> {
                                                  url: get_value("string(*[local-name() = 'group']/*[local-name() = 'content']/@url)".to_string(), _element),
                                                  published: get_value("string(*[local-name() = 'published']/text())".to_string(), _element),
                                                  description: get_value("string(*[local-name() = 'group']/*[local-name() = 'description']/text())".to_string(), _element),
+                                                 flag: default_flag(),
                                              }]
                                          },
                                          None => vec![]
@@ -243,14 +262,27 @@ fn to_show_videos(videos: &mut Vec<Video>, start: usize, end: usize, filter: &St
     return result;
 }
 
-fn load(reload: bool, app_config: &AppConfig) -> Option<Videos> {
+fn save_videos(app_config: &AppConfig, videos: &Videos) {
+    let path = app_config.cache_path.as_str();
+    let serialized = serde_json::to_string(&videos).unwrap();
+    fs::write(path, serialized).expect("writing videos json failed");
+}
+
+fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) -> Option<Videos> {
     match get_subscriptions_xml() {
         Ok(xml) => {
             let path = app_config.cache_path.as_str();
             if reload || !fs::metadata(path).is_ok() {
-                let videos = Videos { videos: get_videos(xml, &app_config.channel_ids)};
-                let serialized = serde_json::to_string(&videos).unwrap();
-                fs::write(path, serialized).expect("writing videos json failed");
+                let mut videos = Videos { videos: get_videos(xml, &app_config.channel_ids)};
+                
+                for vid in videos.videos.iter_mut() {
+                    for original_vid in original_videos.videos.iter() {
+                        if vid.url == original_vid.url {
+                            vid.flag = original_vid.flag.clone();
+                        }
+                    }
+                }
+                save_videos(app_config, &videos);
             }
             match fs::read_to_string(path) {
                 Ok(s) => 
@@ -370,7 +402,7 @@ fn print_videos(toshow: &Vec<Video>) {
     for video in toshow {
         let published = video.published.split("T").collect::<Vec<&str>>();
         let whitespaces = " ".repeat(max - video.channel.chars().count());
-        let s = format!("  \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}", published[0][5..10].to_string(), video.channel, whitespaces, video.title);
+        let s = format!("  {} \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}",  flag_to_string(&video.flag), published[0][5..10].to_string(), video.channel, whitespaces, video.title);
         println!("{}", s.chars().take(min(s.chars().count(), cols-4+9+9+2)).collect::<String>());
     }
 }
@@ -507,6 +539,7 @@ fn print_help() {
   f          filter
   p,enter    plays selected video
   o          open selected video in browser
+  t          tag untag a video as read
   ")
 }
 
@@ -568,7 +601,7 @@ impl YoutubeSubscribtions {
 
     fn hard_reload(&mut self) {
         debug(&"updating video list...".to_string());
-        self.videos = load(true, &self.app_config).unwrap();
+        self.videos = load(true, &self.app_config, &self.videos).unwrap();
         debug(&"".to_string());
         self.soft_reload();
     }
@@ -581,6 +614,7 @@ impl YoutubeSubscribtions {
     fn play_current(&mut self) {
         if self.i < self.toshow.len() {
             play(&self.toshow[self.i], &self.app_config);
+            self.flag(&Some(Flag::Read));
             self.clear_and_print_videos();
         }
     }
@@ -652,6 +686,29 @@ impl YoutubeSubscribtions {
         }
     }
 
+    fn flag(&mut self, flag: &Option<Flag>) {
+        if self.i < self.toshow.len() {
+            self.toshow[self.i].flag = flag.clone();
+            for vid in self.videos.videos.iter_mut() {
+                if vid.url == self.toshow[self.i].url {
+                    vid.flag = flag.clone();
+                }
+            }
+            save_videos(&self.app_config, &self.videos);
+        }
+    }
+
+    fn flag_unflag(&mut self) {
+        if self.i < self.toshow.len() {
+            let flag = match self.toshow[self.i].flag {
+                Some(Flag::Read) => None, 
+                None => Some(Flag::Read),
+            };
+            self.flag(&flag);
+            self.clear_and_print_videos();
+        }
+    }
+
     fn help(&mut self) {
         clear();
         print_help();
@@ -672,7 +729,7 @@ impl YoutubeSubscribtions {
     }
 
     fn run(&mut self) {
-        self.videos = load(false, &self.app_config).unwrap();
+        self.videos = load(false, &self.app_config, &self.videos).unwrap();
         self.start = 0;
         self.i = 0;
         smcup();
@@ -708,6 +765,7 @@ impl YoutubeSubscribtions {
                                 Char('R') => self.hard_reload(),
                                 Char('h') | Char('?') => self.help(),
                                 Char('i') | Right => self.info(),
+                                Char('t') => self.flag_unflag(),
                                 Char('p') | Char('\n') => self.play_current(),
                                 Char('o') => self.open_current(),
                                 Char('/') => self.search(),
