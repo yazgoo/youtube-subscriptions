@@ -22,7 +22,7 @@ use sxd_document::dom::Element;
 use terminal_size::{Width, Height, terminal_size};
 use std::cmp::min;
 use std::process::{Command, Stdio};
-use crossterm_input::{input, RawScreen, InputEvent};
+use crossterm_input::{input, RawScreen, InputEvent, MouseEvent, MouseButton};
 use crossterm_input::KeyEvent::{Char, Down, Up, Left, Right};
 use rayon::prelude::*;
 use webbrowser;
@@ -741,9 +741,12 @@ impl YoutubeSubscribtions {
             let input = input();
             let result;
             {
+                input.enable_mouse_mode().unwrap();
                 let _screen = RawScreen::into_raw_mode();
                 let mut stdin = input.read_sync();
                 result = stdin.next();
+                input.disable_mouse_mode().unwrap();
+
             }
             match result {
                 Some(key_event) => {
@@ -772,6 +775,20 @@ impl YoutubeSubscribtions {
                                 Char(':') => self.command(),
                                 Char('f') => self.filter(),
                                 _ => debug(&format!("key not supported (press h for help)")),
+                            }
+                        },
+                        InputEvent::Mouse(event) => {
+                            match event {
+                                MouseEvent::Press(MouseButton::Left, _x, y) => {
+                                    let new_i = usize::from(y) - 1;
+                                    if self.i == new_i {
+                                        self.play_current();
+                                    }
+                                    else {
+                                        self.i = jump(self.i, new_i);
+                                    }
+                                },
+                                _ => (),
                             }
                         },
                         _ => ()
