@@ -23,3 +23,4 @@ crossterm_input = { version = "0.3", default-features = false }
 crossterm = { version = "0.9" }
 rayon = { version = "1.1", default-features=false }
 webbrowser = { version = "0.5", default-features=false }
+clipboard = { version = "0.5", default-features=false }

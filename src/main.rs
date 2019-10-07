@@ -6,7 +6,9 @@ extern crate terminal_size;
 extern crate crossterm_input;
 extern crate crossterm;
 extern crate serde;
+extern crate clipboard;
 
+use clipboard::{ClipboardProvider, ClipboardContext};
 use serde::{Serialize, Deserialize};
 use sxd_document::parser;
 use sxd_xpath::{evaluate_xpath, Value, Factory};
@@ -333,6 +335,7 @@ fn rmcup() {
 fn clear() {
     print!("\x1b[2J");
     io::stdout().flush().unwrap();
+    move_cursor(0);
 }
 
 fn show_cursor() {
@@ -502,7 +505,6 @@ fn play_id(id: &String, app_config: &AppConfig) {
             , &app_config.mpv_path);
     } else {
         clear();
-        move_cursor(0);
         let path = format!("{}/{}.{}", app_config.video_path, id, app_config.video_extension);
         download_video(&path, &id, app_config);
         play_video(&path, app_config);
@@ -540,13 +542,14 @@ fn print_help() {
   p,enter    plays selected video
   o          open selected video in browser
   t          tag untag a video as read
+  y          copy video url in system clipboard
   ")
 }
 
 fn print_info(v: &Video) {
-    println!("{}", v.title);
+    println!("\x1b[34;1m{}\x1b[0m", v.title);
     println!("");
-    println!("from {}", v.channel);
+    println!("from \x1b[36m{}\x1b[0m", v.channel);
     println!("");
     println!("{}", v.description);
 }
@@ -560,7 +563,6 @@ impl YoutubeSubscribtions {
 
     fn clear_and_print_videos(&mut self) {
         clear();
-        move_cursor(0);
         print_videos(&self.toshow)
     }
 
@@ -672,6 +674,13 @@ impl YoutubeSubscribtions {
         self.clear_and_print_videos()
     }
 
+    fn yank_video_uri(&mut self) {
+        match ClipboardProvider::new() {
+            Ok::<ClipboardContext, _>(mut ctx) => ctx.set_contents(self.toshow[self.i].url.clone()).unwrap(),
+            Err(e) => debug(&format!("error: {:?}", e)),
+        }
+    }
+
     fn wait_key_press_and_soft_reload(&mut self) {
         pause();
         clear();
@@ -773,7 +782,8 @@ impl YoutubeSubscribtions {
                                 Char('o') => self.open_current(),
                                 Char('/') => self.search(),
                                 Char(':') => self.command(),
-                                Char('f') => self.filter(),
+                                Char('y') => self.yank_video_uri(),
+                                Char('f') | Char('|') => self.filter(),
                                 _ => debug(&format!("key not supported (press h for help)")),
                             }
                         },
