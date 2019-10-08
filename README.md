@@ -11,7 +11,7 @@ Especially well suited for Raspberry Pi.
 
 - [mpv](http://mpv.io) to stream videos (if `mpv_mode` is enabled (default))
 - [youtube-dl](https://ytdl-org.github.io/youtube-dl/index.html) to download youtube videos (if `mpv_mode` is disabled)
-- [omxplayer](https://www.raspberrypi.org/documentation/raspbian/applications/omxplayer.md) or [vlc](https://www.videolan.org) to play videos
+- [omxplayer](https://www.raspberrypi.org/documentation/raspbian/applications/omxplayer.md) or [vlc](https://www.videolan.org) or [mplayer](http://www.mplayerhq.hu) or [mpv](http://mpv.io) to play videos
 
 # installing
 
