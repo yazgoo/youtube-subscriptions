@@ -490,9 +490,13 @@ fn download_video(path: &String, id: &String, app_config: &AppConfig) {
     }
 }
 
+fn id_to_url(id: &String) -> String {
+    format!("https://www.youtube.com/watch?v={}", id)
+}
+
 fn play_id(id: &String, app_config: &AppConfig) {
     if app_config.mpv_mode && fs::metadata(&app_config.mpv_path).is_ok() {
-        let url = format!("https://www.youtube.com/watch?v={}", id);
+        let url = id_to_url(&id);
         let message = format!("playing {} with mpv...", url);
         debug(&message);
         read_command_output(
@@ -675,9 +679,17 @@ impl YoutubeSubscribtions {
     }
 
     fn yank_video_uri(&mut self) {
-        match ClipboardProvider::new() {
-            Ok::<ClipboardContext, _>(mut ctx) => ctx.set_contents(self.toshow[self.i].url.clone()).unwrap(),
-            Err(e) => debug(&format!("error: {:?}", e)),
+        match get_id(&self.toshow[self.i]) {
+            Some(Some(id)) => {
+                match ClipboardProvider::new() {
+                    Ok::<ClipboardContext, _>(mut ctx) => { 
+                        ctx.set_contents(id_to_url(&id)).unwrap();
+                        debug(&format!("yanked url for {}", id));
+                    },
+                    Err(e) => debug(&format!("error: {:?}", e)),
+                }
+            },
+            _ => debug(&"failed extracting id from video url".to_string()),
         }
     }
 
