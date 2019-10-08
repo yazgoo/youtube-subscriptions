@@ -8,6 +8,9 @@ extern crate crossterm;
 extern crate serde;
 extern crate clipboard;
 
+use std::io::prelude::*;
+use flate2::read::GzDecoder;
+use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
 use serde::{Serialize, Deserialize};
 use sxd_document::parser;
@@ -181,9 +184,12 @@ fn get_value(xpath: String, node: Element) -> String {
 }
 
 fn get_channel_videos(channel_url: String) -> Vec<Video> {
-    let response = ureq::get(channel_url.replace("https:", "http:").as_str()).call();
+    let response = ureq::get(channel_url.replace("https:", "http:").as_str()).set("Accept-Encoding", "gzip").call();
     if response.ok() {
-        let contents = response.into_string().unwrap();
+        let response_str = response.into_reader();
+        let mut decoder = GzDecoder::new(response_str);
+        let mut contents = String::new();
+        decoder.read_to_string(&mut contents).unwrap();
                     let package = parser::parse(contents.as_str()).expect("failed to parse XML");
                     let document = package.as_document();
                     let title = evaluate_xpath(&document, "string(/*[local-name() = 'feed']/*[local-name() = 'title']/text())").unwrap_or(Value::String("".to_string())).string();
@@ -213,7 +219,6 @@ fn get_channel_videos(channel_url: String) -> Vec<Video> {
                             }
                         },
                         Err(_) => {
-                            println!("aaaaa");
                             vec![]
                         }
                     }
@@ -606,10 +611,13 @@ impl YoutubeSubscribtions {
     }
 
     fn hard_reload(&mut self) {
+
+        let now = Instant::now();
         debug(&"updating video list...".to_string());
         self.videos = load(true, &self.app_config, &self.videos).unwrap();
         debug(&"".to_string());
         self.soft_reload();
+        debug(&format!("took {}s", now.elapsed().as_secs()).to_string());
     }
 
     fn first_page(&mut self) {
