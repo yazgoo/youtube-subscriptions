@@ -8,13 +8,14 @@ extern crate crossterm;
 extern crate serde;
 extern crate clipboard;
 
-use std::io::prelude::*;
+use cpuprofiler::PROFILER;
+
 use flate2::read::GzDecoder;
 use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
 use serde::{Serialize, Deserialize};
 use sxd_document::parser;
-use sxd_xpath::{evaluate_xpath, Value, Factory};
+use sxd_xpath::{evaluate_xpath, Value, Factory, XPath};
 use sxd_xpath::context::Context;
 use std::fs;
 use std::env;
@@ -162,7 +163,6 @@ fn default_flag() -> Option<Flag> {
 struct Video {
     channel: String,
     title: String,
-    thumbnail: String,
     url: String,
     published: String,
     description: String,
@@ -175,54 +175,68 @@ struct Videos {
     videos: Vec<Video>,
 }
 
-fn get_value(xpath: String, node: Element) -> String {
+fn build_xpath(xpath: String) -> XPath {
     let factory = Factory::new();
     let xpath = factory.build(xpath.as_str()).expect("Could not compile XPath");
-    let xpath = xpath.expect("No XPath was compiled");
-    let context = Context::new();
+    xpath.expect("No XPath was compiled")
+}
+
+fn get_value(xpath: &XPath, node: Element, context: &Context) -> String {
     return xpath.evaluate(&context, node).unwrap_or(Value::String("".to_string())).string().to_string();
+}
+
+fn get_channel_videos_from_contents(contents: &String) -> Vec<Video> {
+    let package = parser::parse(contents).expect("failed to parse XML");
+    let document = package.as_document();
+    let mut context = Context::new();
+    context.set_namespace("atom", "http://www.w3.org/2005/Atom");
+    context.set_namespace("media", "http://search.yahoo.com/mrss/");
+    let title_xpath = build_xpath("string(/atom:feed/atom:title[1]/text())".to_string());
+    let entry_xpath = build_xpath("/atom:feed/atom:entry[1]".to_string());
+    let title = title_xpath.evaluate(&context, document.root()).unwrap_or(Value::String("".to_string())).string();
+    match entry_xpath.evaluate(&context, document.root()) {
+        Ok(val) => {
+            let title_xpath = build_xpath("string(atom:title[1]/text())".to_string());
+            let url_xpath = build_xpath("string(media:group/media:content[1]/@url)".to_string());
+            let published_xpath = build_xpath("string(atom:published[1]/text())".to_string());
+            let description_xpath = build_xpath("string(media:group/media:description[1]/text())".to_string());
+            if let Value::Nodeset(entries) = val {
+                entries.iter().flat_map( |entry|
+                    match entry.element() {
+                        Some(_element) => 
+                        {
+                            vec![Video { 
+                                channel: title.to_string(),
+                                title: get_value(&title_xpath, _element, &context),
+                                url: get_value(&url_xpath, _element, &context),
+                                published: get_value(&published_xpath, _element, &context),
+                                description: get_value(&description_xpath, _element, &context),
+                                flag: default_flag(),
+                            }]
+                        },
+                        None => vec![]
+                    }
+                ).collect()
+            }
+            else {
+                vec![]
+            }
+        },
+        Err(_) => {
+            vec![]
+        }
+    }
 }
 
 fn get_channel_videos(channel_url: String) -> Vec<Video> {
     let response = ureq::get(channel_url.replace("https:", "http:").as_str()).set("Accept-Encoding", "gzip").call();
     if response.ok() {
-        let response_str = response.into_reader();
-        let mut decoder = GzDecoder::new(response_str);
+        let response_read = response.into_reader();
+        let mut decoder = GzDecoder::new(response_read);
         let mut contents = String::new();
         decoder.read_to_string(&mut contents).unwrap();
-                    let package = parser::parse(contents.as_str()).expect("failed to parse XML");
-                    let document = package.as_document();
-                    let title = evaluate_xpath(&document, "string(/*[local-name() = 'feed']/*[local-name() = 'title']/text())").unwrap_or(Value::String("".to_string())).string();
-                    match evaluate_xpath(&document, "/*[local-name() = 'feed']/*[local-name() = 'entry']") {
-                        Ok(val) => {
-                            if let Value::Nodeset(entries) = val {
-                                entries.iter().flat_map( |entry|
-                                     match entry.element() {
-                                         Some(_element) => 
-                                         {
-                                             vec![Video { 
-                                                 channel: title.to_string(),
-                                                 title: get_value("string(*[local-name() = 'title']/text())".to_string(), _element),
-                                                 thumbnail: get_value("string(*[local-name() = 'group']/*[local-name() = 'thumbnail']/@url)".to_string(), _element),
-                                                 url: get_value("string(*[local-name() = 'group']/*[local-name() = 'content']/@url)".to_string(), _element),
-                                                 published: get_value("string(*[local-name() = 'published']/text())".to_string(), _element),
-                                                 description: get_value("string(*[local-name() = 'group']/*[local-name() = 'description']/text())".to_string(), _element),
-                                                 flag: default_flag(),
-                                             }]
-                                         },
-                                         None => vec![]
-                                         }
-                                ).collect()
-                            }
-                            else {
-                                vec![]
-                            }
-                        },
-                        Err(_) => {
-                            vec![]
-                        }
-                    }
-                }
+        get_channel_videos_from_contents(&contents)
+    }
     else {
         vec![]
     }
@@ -612,12 +626,17 @@ impl YoutubeSubscribtions {
 
     fn hard_reload(&mut self) {
 
+        // Unlock the mutex and start the profiler
+PROFILER.lock().unwrap().start("./my-prof.profile").expect("Couldn't start");
+
         let now = Instant::now();
         debug(&"updating video list...".to_string());
         self.videos = load(true, &self.app_config, &self.videos).unwrap();
         debug(&"".to_string());
         self.soft_reload();
         debug(&format!("took {}s", now.elapsed().as_secs()).to_string());
+
+PROFILER.lock().unwrap().stop().expect("Couldn't stop");
     }
 
     fn first_page(&mut self) {
@@ -675,7 +694,7 @@ impl YoutubeSubscribtions {
     fn command(&mut self) {
         let s = self.input_with_prefix(":");
         let s = s.split_whitespace().collect::<Vec<&str>>();
-	hide_cursor();
+        hide_cursor();
         clear();
         if s.len() == 2 {
             match s[0] {
