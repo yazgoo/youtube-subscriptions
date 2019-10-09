@@ -7,16 +7,14 @@ extern crate crossterm_input;
 extern crate crossterm;
 extern crate serde;
 extern crate clipboard;
-
-use cpuprofiler::PROFILER;
+extern crate roxmltree;
 
 use flate2::read::GzDecoder;
 use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
 use serde::{Serialize, Deserialize};
 use sxd_document::parser;
-use sxd_xpath::{evaluate_xpath, Value, Factory, XPath};
-use sxd_xpath::context::Context;
+use sxd_xpath::{evaluate_xpath, Value};
 use std::fs;
 use std::env;
 use std::io;
@@ -24,7 +22,6 @@ use std::path::Path;
 use std::io::{Read, Write};
 use std::io::Error;
 use std::io::ErrorKind::NotFound;
-use sxd_document::dom::Element;
 use terminal_size::{Width, Height, terminal_size};
 use std::cmp::min;
 use std::process::{Command, Stdio};
@@ -175,57 +172,34 @@ struct Videos {
     videos: Vec<Video>,
 }
 
-fn build_xpath(xpath: String) -> XPath {
-    let factory = Factory::new();
-    let xpath = factory.build(xpath.as_str()).expect("Could not compile XPath");
-    xpath.expect("No XPath was compiled")
+macro_rules! get_decendant_node {
+    ( $node:expr, $name:expr  ) => {
+        $node.descendants().find(|n| n.tag_name().name() == $name).expect($name)
+    }
 }
 
-fn get_value(xpath: &XPath, node: Element, context: &Context) -> String {
-    return xpath.evaluate(&context, node).unwrap_or(Value::String("".to_string())).string().to_string();
-}
 
 fn get_channel_videos_from_contents(contents: &String) -> Vec<Video> {
-    let package = parser::parse(contents).expect("failed to parse XML");
-    let document = package.as_document();
-    let mut context = Context::new();
-    context.set_namespace("atom", "http://www.w3.org/2005/Atom");
-    context.set_namespace("media", "http://search.yahoo.com/mrss/");
-    let title_xpath = build_xpath("string(/atom:feed/atom:title[1]/text())".to_string());
-    let entry_xpath = build_xpath("/atom:feed/atom:entry[1]".to_string());
-    let title = title_xpath.evaluate(&context, document.root()).unwrap_or(Value::String("".to_string())).string();
-    match entry_xpath.evaluate(&context, document.root()) {
-        Ok(val) => {
-            let title_xpath = build_xpath("string(atom:title[1]/text())".to_string());
-            let url_xpath = build_xpath("string(media:group/media:content[1]/@url)".to_string());
-            let published_xpath = build_xpath("string(atom:published[1]/text())".to_string());
-            let description_xpath = build_xpath("string(media:group/media:description[1]/text())".to_string());
-            if let Value::Nodeset(entries) = val {
-                entries.iter().flat_map( |entry|
-                    match entry.element() {
-                        Some(_element) => 
-                        {
-                            vec![Video { 
-                                channel: title.to_string(),
-                                title: get_value(&title_xpath, _element, &context),
-                                url: get_value(&url_xpath, _element, &context),
-                                published: get_value(&published_xpath, _element, &context),
-                                description: get_value(&description_xpath, _element, &context),
-                                flag: default_flag(),
-                            }]
-                        },
-                        None => vec![]
-                    }
-                ).collect()
-            }
-            else {
-                vec![]
-            }
-        },
-        Err(_) => {
-            vec![]
+    let document = roxmltree::Document::parse(contents).expect("failed to parse XML");
+    let title = get_decendant_node!(document, "title").text().expect("no title found");
+    document.descendants().filter(|n| n.tag_name().name() == "entry").map(|entry| {
+        let video_title = get_decendant_node!(entry, "title").text().expect("no video title found");
+        let video_published = get_decendant_node!(entry, "published").text().expect("no published found");
+        let group = get_decendant_node!(entry, "group");
+        let description = match get_decendant_node!(group, "description").text() {
+            Some(stuff) => stuff,
+            None => "",
+        };
+        let url = get_decendant_node!(group, "content").attribute("url").expect("url");
+        Video { 
+            channel: title.to_string(),
+            title: video_title.to_string(),
+            url: url.to_string(),
+            published: video_published.to_string(),
+            description: description.to_string(),
+            flag: default_flag(),
         }
-    }
+    }).collect::<Vec<Video>>()
 }
 
 fn get_channel_videos(channel_url: String) -> Vec<Video> {
@@ -304,12 +278,16 @@ fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) -> Optio
                     }
                 }
                 save_videos(app_config, &videos);
+                Some(videos)
             }
-            match fs::read_to_string(path) {
-                Ok(s) => 
-                    Some(serde_json::from_str(s.as_str()).unwrap()),
-                Err(_) =>
-                    None
+            else
+            {
+                match fs::read_to_string(path) {
+                    Ok(s) => 
+                        Some(serde_json::from_str(s.as_str()).unwrap()),
+                    Err(_) =>
+                        None
+                }
             }
         },
         Err(_) =>
@@ -625,18 +603,12 @@ impl YoutubeSubscribtions {
     }
 
     fn hard_reload(&mut self) {
-
-        // Unlock the mutex and start the profiler
-PROFILER.lock().unwrap().start("./my-prof.profile").expect("Couldn't start");
-
         let now = Instant::now();
         debug(&"updating video list...".to_string());
         self.videos = load(true, &self.app_config, &self.videos).unwrap();
         debug(&"".to_string());
         self.soft_reload();
-        debug(&format!("took {}s", now.elapsed().as_secs()).to_string());
-
-PROFILER.lock().unwrap().stop().expect("Couldn't stop");
+        debug(&format!("reload took {}s", now.elapsed().as_secs()).to_string());
     }
 
     fn first_page(&mut self) {
