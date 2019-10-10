@@ -7,12 +7,14 @@ extern crate crossterm_input;
 extern crate crossterm;
 extern crate serde;
 extern crate clipboard;
+extern crate roxmltree;
 
+use flate2::read::GzDecoder;
+use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
 use serde::{Serialize, Deserialize};
 use sxd_document::parser;
-use sxd_xpath::{evaluate_xpath, Value, Factory};
-use sxd_xpath::context::Context;
+use sxd_xpath::{evaluate_xpath, Value};
 use std::fs;
 use std::env;
 use std::io;
@@ -20,7 +22,6 @@ use std::path::Path;
 use std::io::{Read, Write};
 use std::io::Error;
 use std::io::ErrorKind::NotFound;
-use sxd_document::dom::Element;
 use terminal_size::{Width, Height, terminal_size};
 use std::cmp::min;
 use std::process::{Command, Stdio};
@@ -159,7 +160,6 @@ fn default_flag() -> Option<Flag> {
 struct Video {
     channel: String,
     title: String,
-    thumbnail: String,
     url: String,
     published: String,
     description: String,
@@ -172,52 +172,45 @@ struct Videos {
     videos: Vec<Video>,
 }
 
-fn get_value(xpath: String, node: Element) -> String {
-    let factory = Factory::new();
-    let xpath = factory.build(xpath.as_str()).expect("Could not compile XPath");
-    let xpath = xpath.expect("No XPath was compiled");
-    let context = Context::new();
-    return xpath.evaluate(&context, node).unwrap_or(Value::String("".to_string())).string().to_string();
+macro_rules! get_decendant_node {
+    ( $node:expr, $name:expr  ) => {
+        $node.descendants().find(|n| n.tag_name().name() == $name).expect($name)
+    }
+}
+
+
+fn get_channel_videos_from_contents(contents: &String) -> Vec<Video> {
+    let document = roxmltree::Document::parse(contents).expect("failed to parse XML");
+    let title = get_decendant_node!(document, "title").text().expect("no title found");
+    document.descendants().filter(|n| n.tag_name().name() == "entry").map(|entry| {
+        let video_title = get_decendant_node!(entry, "title").text().expect("no video title found");
+        let video_published = get_decendant_node!(entry, "published").text().expect("no published found");
+        let group = get_decendant_node!(entry, "group");
+        let description = match get_decendant_node!(group, "description").text() {
+            Some(stuff) => stuff,
+            None => "",
+        };
+        let url = get_decendant_node!(group, "content").attribute("url").expect("url");
+        Video { 
+            channel: title.to_string(),
+            title: video_title.to_string(),
+            url: url.to_string(),
+            published: video_published.to_string(),
+            description: description.to_string(),
+            flag: default_flag(),
+        }
+    }).collect::<Vec<Video>>()
 }
 
 fn get_channel_videos(channel_url: String) -> Vec<Video> {
-    let response = ureq::get(channel_url.replace("https:", "http:").as_str()).call();
+    let response = ureq::get(channel_url.replace("https:", "http:").as_str()).set("Accept-Encoding", "gzip").call();
     if response.ok() {
-        let contents = response.into_string().unwrap();
-                    let package = parser::parse(contents.as_str()).expect("failed to parse XML");
-                    let document = package.as_document();
-                    let title = evaluate_xpath(&document, "string(/*[local-name() = 'feed']/*[local-name() = 'title']/text())").unwrap_or(Value::String("".to_string())).string();
-                    match evaluate_xpath(&document, "/*[local-name() = 'feed']/*[local-name() = 'entry']") {
-                        Ok(val) => {
-                            if let Value::Nodeset(entries) = val {
-                                entries.iter().flat_map( |entry|
-                                     match entry.element() {
-                                         Some(_element) => 
-                                         {
-                                             vec![Video { 
-                                                 channel: title.to_string(),
-                                                 title: get_value("string(*[local-name() = 'title']/text())".to_string(), _element),
-                                                 thumbnail: get_value("string(*[local-name() = 'group']/*[local-name() = 'thumbnail']/@url)".to_string(), _element),
-                                                 url: get_value("string(*[local-name() = 'group']/*[local-name() = 'content']/@url)".to_string(), _element),
-                                                 published: get_value("string(*[local-name() = 'published']/text())".to_string(), _element),
-                                                 description: get_value("string(*[local-name() = 'group']/*[local-name() = 'description']/text())".to_string(), _element),
-                                                 flag: default_flag(),
-                                             }]
-                                         },
-                                         None => vec![]
-                                         }
-                                ).collect()
-                            }
-                            else {
-                                vec![]
-                            }
-                        },
-                        Err(_) => {
-                            println!("aaaaa");
-                            vec![]
-                        }
-                    }
-                }
+        let response_read = response.into_reader();
+        let mut decoder = GzDecoder::new(response_read);
+        let mut contents = String::new();
+        decoder.read_to_string(&mut contents).unwrap();
+        get_channel_videos_from_contents(&contents)
+    }
     else {
         vec![]
     }
@@ -285,12 +278,16 @@ fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) -> Optio
                     }
                 }
                 save_videos(app_config, &videos);
+                Some(videos)
             }
-            match fs::read_to_string(path) {
-                Ok(s) => 
-                    Some(serde_json::from_str(s.as_str()).unwrap()),
-                Err(_) =>
-                    None
+            else
+            {
+                match fs::read_to_string(path) {
+                    Ok(s) => 
+                        Some(serde_json::from_str(s.as_str()).unwrap()),
+                    Err(_) =>
+                        None
+                }
             }
         },
         Err(_) =>
@@ -606,10 +603,12 @@ impl YoutubeSubscribtions {
     }
 
     fn hard_reload(&mut self) {
+        let now = Instant::now();
         debug(&"updating video list...".to_string());
         self.videos = load(true, &self.app_config, &self.videos).unwrap();
         debug(&"".to_string());
         self.soft_reload();
+        debug(&format!("reload took {}s", now.elapsed().as_secs()).to_string());
     }
 
     fn first_page(&mut self) {
@@ -667,7 +666,7 @@ impl YoutubeSubscribtions {
     fn command(&mut self) {
         let s = self.input_with_prefix(":");
         let s = s.split_whitespace().collect::<Vec<&str>>();
-	hide_cursor();
+        hide_cursor();
         clear();
         if s.len() == 2 {
             match s[0] {
