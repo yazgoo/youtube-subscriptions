@@ -15,6 +15,8 @@ matrix:
 os:
 - linux
 - osx
+before_install:
+  - if which apt-get ; then sudo apt-get install -y libxcb-shape0-dev libxcb-xfixes0-dev; fi
 deploy:
 #- provider: cargo
 #  skip_cleanup: true
