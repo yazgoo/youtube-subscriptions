@@ -1,7 +1,7 @@
 extern crate sxd_document;
 extern crate sxd_xpath;
 extern crate dirs;
-extern crate ureq;
+extern crate reqwest;
 extern crate terminal_size;
 extern crate crossterm_input;
 extern crate crossterm;
@@ -202,17 +202,20 @@ fn get_channel_videos_from_contents(contents: &String) -> Vec<Video> {
     }).collect::<Vec<Video>>()
 }
 
-fn get_channel_videos(channel_url: String) -> Vec<Video> {
-    let response = ureq::get(channel_url.replace("https:", "http:").as_str()).set("Accept-Encoding", "gzip").call();
-    if response.ok() {
-        let response_read = response.into_reader();
-        let mut decoder = GzDecoder::new(response_read);
-        let mut contents = String::new();
-        decoder.read_to_string(&mut contents).unwrap();
-        get_channel_videos_from_contents(&contents)
-    }
-    else {
-        vec![]
+fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Vec<Video> {
+    let wrapped_response = client.get(channel_url.as_str()).header("Accept-Encoding", "gzip").send();
+    match wrapped_response {
+        Ok(mut response) =>
+            if response.status().is_success() {
+                get_channel_videos_from_contents(&response.text().unwrap())
+            }
+            else {
+                vec![]
+            },
+            Err(e) => {
+                debug(&format!("error {:?}", e));
+                vec![]
+            }
     }
 }
 
@@ -230,8 +233,9 @@ fn get_videos(xml: String, additional_channel_ids: &Vec<String>) -> Vec<Video> {
                 }).collect::<Vec<String>>();
                 let urls_from_additional = additional_channel_ids.iter().map( |id| "https://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id);
                 urls_from_xml.extend(urls_from_additional);
+                let client = reqwest::Client::builder().h2_prior_knowledge().use_rustls_tls().build().unwrap();
                 urls_from_xml.par_iter().flat_map( |url|
-                       get_channel_videos(url.to_string())
+                       get_channel_videos(&client, url.to_string())
                 ).collect::<Vec<Video>>()
             }
             else {
