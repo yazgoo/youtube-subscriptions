@@ -9,7 +9,6 @@ extern crate serde;
 extern crate clipboard;
 extern crate roxmltree;
 
-use flate2::read::GzDecoder;
 use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
 use serde::{Serialize, Deserialize};
@@ -235,7 +234,7 @@ fn get_videos(xml: String, additional_channel_ids: &Vec<String>) -> Vec<Video> {
                 urls_from_xml.extend(urls_from_additional);
                 let client = reqwest::Client::builder().h2_prior_knowledge().use_rustls_tls().build().unwrap();
                 urls_from_xml.par_iter().flat_map( |url|
-                       get_channel_videos(&client, url.to_string())
+                    get_channel_videos(&client, url.to_string())
                 ).collect::<Vec<Video>>()
             }
             else {
@@ -612,7 +611,7 @@ impl YoutubeSubscribtions {
         self.videos = load(true, &self.app_config, &self.videos).unwrap();
         debug(&"".to_string());
         self.soft_reload();
-        debug(&format!("reload took {}s", now.elapsed().as_secs()).to_string());
+        debug(&format!("reload took {} ms", now.elapsed().as_millis()).to_string());
     }
 
     fn first_page(&mut self) {
@@ -752,6 +751,14 @@ impl YoutubeSubscribtions {
         }
     }
 
+    fn up(&mut self) {
+        self.i = jump(self.i, if self.i > 0 { self.i - 1 } else { self.n - 1 });
+    }
+
+    fn down(&mut self) {
+        self.i = jump(self.i, self.i + 1);
+    }
+
     fn run(&mut self) {
         self.videos = load(false, &self.app_config, &self.videos).unwrap();
         self.start = 0;
@@ -781,8 +788,8 @@ impl YoutubeSubscribtions {
                                     quit();
                                     break;
                                 },
-                                Char('j') | Char('l') | Down => self.i = jump(self.i, self.i + 1),
-                                Char('k') | Up => self.i = jump(self.i, if self.i > 0 { self.i - 1 } else { self.n - 1 }),
+                                Char('j') | Char('l') | Down => self.down(),
+                                Char('k') | Up => self.up(),
                                 Char('g') | Char('H') => self.i = jump(self.i, 0),
                                 Char('M') => self.i = jump(self.i, self.n / 2),
                                 Char('G') | Char('L') => self.i = jump(self.i, self.n - 1),
@@ -812,6 +819,12 @@ impl YoutubeSubscribtions {
                                     else {
                                         self.i = jump(self.i, new_i);
                                     }
+                                },
+                                MouseEvent::Press(MouseButton::WheelUp, _x, _y) => {
+                                    self.up()
+                                },
+                                MouseEvent::Press(MouseButton::WheelDown, _x, _y) => {
+                                    self.down()
                                 },
                                 _ => (),
                             }
