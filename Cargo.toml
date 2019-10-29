@@ -1,6 +1,6 @@
 [package]
 name = "youtube-subscriptions"
-version = "0.2.55"
+version = "0.2.56"
 authors = ["yazgoo <yazgoo@gmail.com>"]
 edition = "2018"
 license = "MIT"
