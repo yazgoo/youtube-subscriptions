@@ -15,7 +15,6 @@ categories = ["command-line-utilities"]
 sxd-xpath = { version = "0.4.2", default-features = false }
 sxd-document = { version = "0.3.2", default-features = false }
 dirs = { version = "2.0.1", default-features = false }
-ureq = { version = "0.5.0", default-features = false }
 serde = { version = "1.0", features = ["derive"], default-features = false }
 serde_json = { version = "1.0", default-features = false }
 terminal_size = { version = "0.1.8", default-features = false }
@@ -24,5 +23,5 @@ crossterm = { version = "0.9" }
 rayon = { version = "1.1", default-features=false }
 webbrowser = { version = "0.5", default-features=false }
 clipboard = { version = "0.5", default-features=false }
-flate2 = { version = "1.0", features = ["zlib"], default-features = false }
 roxmltree = { version = "0.7", default-features = false }
+reqwest = { version = "0.9" , features = ["rustls-tls"]}

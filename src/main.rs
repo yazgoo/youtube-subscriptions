@@ -1,7 +1,7 @@
 extern crate sxd_document;
 extern crate sxd_xpath;
 extern crate dirs;
-extern crate ureq;
+extern crate reqwest;
 extern crate terminal_size;
 extern crate crossterm_input;
 extern crate crossterm;
@@ -9,7 +9,6 @@ extern crate serde;
 extern crate clipboard;
 extern crate roxmltree;
 
-use flate2::read::GzDecoder;
 use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
 use serde::{Serialize, Deserialize};
@@ -202,17 +201,20 @@ fn get_channel_videos_from_contents(contents: &String) -> Vec<Video> {
     }).collect::<Vec<Video>>()
 }
 
-fn get_channel_videos(channel_url: String) -> Vec<Video> {
-    let response = ureq::get(channel_url.replace("https:", "http:").as_str()).set("Accept-Encoding", "gzip").call();
-    if response.ok() {
-        let response_read = response.into_reader();
-        let mut decoder = GzDecoder::new(response_read);
-        let mut contents = String::new();
-        decoder.read_to_string(&mut contents).unwrap();
-        get_channel_videos_from_contents(&contents)
-    }
-    else {
-        vec![]
+fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Vec<Video> {
+    let wrapped_response = client.get(channel_url.as_str()).header("Accept-Encoding", "gzip").send();
+    match wrapped_response {
+        Ok(mut response) =>
+            if response.status().is_success() {
+                get_channel_videos_from_contents(&response.text().unwrap())
+            }
+            else {
+                vec![]
+            },
+            Err(e) => {
+                debug(&format!("error {:?}", e));
+                vec![]
+            }
     }
 }
 
@@ -230,8 +232,9 @@ fn get_videos(xml: String, additional_channel_ids: &Vec<String>) -> Vec<Video> {
                 }).collect::<Vec<String>>();
                 let urls_from_additional = additional_channel_ids.iter().map( |id| "https://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id);
                 urls_from_xml.extend(urls_from_additional);
+                let client = reqwest::Client::builder().h2_prior_knowledge().use_rustls_tls().build().unwrap();
                 urls_from_xml.par_iter().flat_map( |url|
-                       get_channel_videos(url.to_string())
+                    get_channel_videos(&client, url.to_string())
                 ).collect::<Vec<Video>>()
             }
             else {
@@ -608,7 +611,7 @@ impl YoutubeSubscribtions {
         self.videos = load(true, &self.app_config, &self.videos).unwrap();
         debug(&"".to_string());
         self.soft_reload();
-        debug(&format!("reload took {}s", now.elapsed().as_secs()).to_string());
+        debug(&format!("reload took {} ms", now.elapsed().as_millis()).to_string());
     }
 
     fn first_page(&mut self) {
@@ -748,6 +751,14 @@ impl YoutubeSubscribtions {
         }
     }
 
+    fn up(&mut self) {
+        self.i = jump(self.i, if self.i > 0 { self.i - 1 } else { self.n - 1 });
+    }
+
+    fn down(&mut self) {
+        self.i = jump(self.i, self.i + 1);
+    }
+
     fn run(&mut self) {
         self.videos = load(false, &self.app_config, &self.videos).unwrap();
         self.start = 0;
@@ -777,8 +788,8 @@ impl YoutubeSubscribtions {
                                     quit();
                                     break;
                                 },
-                                Char('j') | Char('l') | Down => self.i = jump(self.i, self.i + 1),
-                                Char('k') | Up => self.i = jump(self.i, if self.i > 0 { self.i - 1 } else { self.n - 1 }),
+                                Char('j') | Char('l') | Down => self.down(),
+                                Char('k') | Up => self.up(),
                                 Char('g') | Char('H') => self.i = jump(self.i, 0),
                                 Char('M') => self.i = jump(self.i, self.n / 2),
                                 Char('G') | Char('L') => self.i = jump(self.i, self.n - 1),
@@ -808,6 +819,12 @@ impl YoutubeSubscribtions {
                                     else {
                                         self.i = jump(self.i, new_i);
                                     }
+                                },
+                                MouseEvent::Press(MouseButton::WheelUp, _x, _y) => {
+                                    self.up()
+                                },
+                                MouseEvent::Press(MouseButton::WheelDown, _x, _y) => {
+                                    self.down()
                                 },
                                 _ => (),
                             }
