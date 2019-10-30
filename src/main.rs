@@ -750,6 +750,15 @@ impl YoutubeSubscribtions {
         self.i = jump(self.i, self.i + 1);
     }
 
+    fn handle_resize(&mut self) {
+        let lines = get_lines();
+        if self.n != lines {
+            self.n = lines;
+            self.i = 0;
+            self.clear_and_print_videos();
+        }
+    }
+
     fn run(&mut self) {
         self.videos = load(false, &self.app_config, &self.videos).unwrap();
         self.start = 0;
@@ -759,6 +768,7 @@ impl YoutubeSubscribtions {
         self.clear_and_print_videos();
         hide_cursor();
         loop {
+            self.handle_resize();
             print_selector(self.i);
             let input = input();
             let result;
