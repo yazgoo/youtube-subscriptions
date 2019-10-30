@@ -121,7 +121,7 @@ fn get_subscriptions_xml() -> Result<String, Error> {
                 Some(s) => {
                     let path = format!("{}/.config/youtube-subscriptions/subscription_manager", s);
                     if fs::metadata(&path).is_ok() {
-                        return fs::read_to_string(path)
+                        fs::read_to_string(path)
                     }
                     else {
                         let url = "https://www.youtube.com/subscription_manager?action_takeout=1";
@@ -178,7 +178,7 @@ macro_rules! get_decendant_node {
 }
 
 
-fn get_channel_videos_from_contents(contents: &String) -> Vec<Video> {
+fn get_channel_videos_from_contents(contents: &str) -> Vec<Video> {
     let document = roxmltree::Document::parse(contents).expect("failed to parse XML");
     let title = get_decendant_node!(document, "title").text().expect("no title found");
     document.descendants().filter(|n| n.tag_name().name() == "entry").map(|entry| {
@@ -218,7 +218,7 @@ fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Vec<Vide
     }
 }
 
-fn get_videos(xml: String, additional_channel_ids: &Vec<String>) -> Vec<Video> {
+fn get_videos(xml: String, additional_channel_ids: &[String]) -> Vec<Video> {
     let package = parser::parse(xml.as_str()).expect("failed to parse XML");
     let document = package.as_document();
     match evaluate_xpath(&document, "//outline/@xmlUrl") {
@@ -249,15 +249,15 @@ fn get_videos(xml: String, additional_channel_ids: &Vec<String>) -> Vec<Video> {
     
 }
 
-fn to_show_videos(videos: &mut Vec<Video>, start: usize, end: usize, filter: &String) -> Vec<Video> {
+fn to_show_videos(videos: &mut Vec<Video>, start: usize, end: usize, filter: &str) -> Vec<Video> {
     videos.sort_by(|a, b| b.published.cmp(&a.published));
     let filtered_videos = videos.iter().filter(|video| 
-        video.title.contains(filter.as_str()) || video.channel.contains(filter.as_str()) 
+        video.title.contains(filter) || video.channel.contains(filter) 
     ).cloned().collect::<Vec<Video>>();
     let new_end = std::cmp::min(end, filtered_videos.len());
     let mut result = filtered_videos[start..new_end].to_vec();
     result.reverse();
-    return result;
+    result
 }
 
 fn save_videos(app_config: &AppConfig, videos: &Videos) {
@@ -270,7 +270,7 @@ fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) -> Optio
     match get_subscriptions_xml() {
         Ok(xml) => {
             let path = app_config.cache_path.as_str();
-            if reload || !fs::metadata(path).is_ok() {
+            if reload || fs::metadata(path).is_err() {
                 let mut videos = Videos { videos: get_videos(xml, &app_config.channel_ids)};
                 
                 for vid in videos.videos.iter_mut() {
@@ -282,9 +282,7 @@ fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) -> Optio
                 }
                 save_videos(app_config, &videos);
                 Some(videos)
-            }
-            else
-            {
+            } else {
                 match fs::read_to_string(path) {
                     Ok(s) => 
                         Some(serde_json::from_str(s.as_str()).unwrap()),
@@ -358,7 +356,7 @@ fn clear_to_end_of_line() {
     io::stdout().flush().unwrap();
 }
 
-fn debug(s: &String) {
+fn debug(s: &str) {
     move_to_bottom();
     clear_to_end_of_line();
     move_to_bottom();
@@ -380,7 +378,7 @@ fn clear_selector(i: usize) {
 
 fn jump(i: usize, new_i: usize) -> usize {
     clear_selector(i);
-    return new_i;
+    new_i
 }
 
 fn pause() {
@@ -399,20 +397,24 @@ struct YoutubeSubscribtions {
     app_config: AppConfig,
 }
 
-fn print_videos(toshow: &Vec<Video>) {
+fn print_videos(toshow: &[Video]) {
     let max = toshow.iter().fold(0, |acc, x| if x.channel.chars().count() > acc { x.channel.chars().count() } else { acc } );
     let cols = get_cols();
     for video in toshow {
-        let published = video.published.split("T").collect::<Vec<&str>>();
+        let published = video.published.split('T').collect::<Vec<&str>>();
         let whitespaces = " ".repeat(max - video.channel.chars().count());
         let s = format!("  {} \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}",  flag_to_string(&video.flag), published[0][5..10].to_string(), video.channel, whitespaces, video.title);
         println!("{}", s.chars().take(min(s.chars().count(), cols-4+9+9+2)).collect::<String>());
     }
 }
 
-fn get_id(v: &Video) -> Option<Option<String>> {
-    v.url.split("/").collect::<Vec<&str>>().last().map( |page|
-                                                        page.split("?").collect::<Vec<&str>>().first().map( |s| s.to_string() ))
+fn get_id(v: &Video) -> Option<String> {
+    match v.url.split('/').collect::<Vec<&str>>().last().map( |page|
+                                                        page.split('?').collect::<Vec<&str>>().first().map( |s| s.to_string() )) {
+        Some(Some(a)) => Some(a),
+        Some(None) => None,
+        None => None
+    }
 }
 
 fn print_press_any_key_and_pause() {
@@ -420,7 +422,7 @@ fn print_press_any_key_and_pause() {
     pause();
 }
 
-fn read_command_output(command: &mut Command, binary: &String) {
+fn read_command_output(command: &mut Command, binary: &str) {
     match command.stdout(Stdio::piped())
         .spawn() {
             Ok(mut child) => {
@@ -464,13 +466,12 @@ fn read_command_output(command: &mut Command, binary: &String) {
         }
 }
 
-fn play_video(path: &String, app_config: &AppConfig) {
+fn play_video(path: &str, app_config: &AppConfig) {
     for player in &app_config.players {
         if fs::metadata(&player[0]).is_ok() {
-
             let mut child1 = Command::new(&player[0]);
-            for i in 1..player.len() {
-                child1.arg(&player[i]);
+            for arg in player.iter().skip(1) {
+                child1.arg(&arg);
             } 
             read_command_output(child1.arg(path), &player[0]);
             return
@@ -478,8 +479,8 @@ fn play_video(path: &String, app_config: &AppConfig) {
     }
 }
 
-fn download_video(path: &String, id: &String, app_config: &AppConfig) {
-    if !fs::metadata(&path).is_ok() {
+fn download_video(path: &str, id: &str, app_config: &AppConfig) {
+    if fs::metadata(&path).is_err() {
         read_command_output(Command::new("youtube-dl")
             .arg("-f")
             .arg(&app_config.youtubedl_format)
@@ -490,11 +491,11 @@ fn download_video(path: &String, id: &String, app_config: &AppConfig) {
     }
 }
 
-fn id_to_url(id: &String) -> String {
+fn id_to_url(id: &str) -> String {
     format!("https://www.youtube.com/watch?v={}", id)
 }
 
-fn play_id(id: &String, app_config: &AppConfig) {
+fn play_id(id: &str, app_config: &AppConfig) {
     if app_config.mpv_mode && fs::metadata(&app_config.mpv_path).is_ok() {
         let url = id_to_url(&id);
         let message = format!("playing {} with mpv...", url);
@@ -516,12 +517,8 @@ fn play_id(id: &String, app_config: &AppConfig) {
 }
 
 fn play(v: &Video, app_config: &AppConfig) {
-    match get_id(v) {
-        Some(Some(id)) => {
-            play_id(&id, app_config);
-            ()
-        },
-        _ => (),
+    if let Some(id) = get_id(v) {
+        play_id(&id, app_config);
     }
 }
 
@@ -552,9 +549,9 @@ fn print_help() {
 
 fn print_info(v: &Video) {
     println!("\x1b[34;1m{}\x1b[0m", v.title);
-    println!("");
+    println!();
     println!("from \x1b[36m{}\x1b[0m", v.channel);
-    println!("");
+    println!();
     println!("{}", v.description);
 }
 
@@ -585,7 +582,7 @@ impl YoutubeSubscribtions {
                 self.start = 0;
             }
             else {
-                self.start = self.start - self.n;
+                self.start -= self.n;
             }
         }
         self.toshow = to_show_videos(&mut self.videos.videos, self.start, self.start + self.n, &self.filter);
@@ -672,17 +669,14 @@ impl YoutubeSubscribtions {
         hide_cursor();
         clear();
         if s.len() == 2 {
-            match s[0] {
-                "o" => play_id(&s[1].to_string(), &self.app_config),
-                _ => ()
-            }
+            if let "o" = s[0] { play_id(&s[1].to_string(), &self.app_config) }
         }
         self.clear_and_print_videos()
     }
 
     fn yank_video_uri(&mut self) {
         match get_id(&self.toshow[self.i]) {
-            Some(Some(id)) => {
+            Some(id) => {
                 match ClipboardProvider::new() {
                     Ok::<ClipboardContext, _>(mut ctx) => { 
                         ctx.set_contents(id_to_url(&id)).unwrap();
@@ -741,12 +735,9 @@ impl YoutubeSubscribtions {
     fn download(&mut self, take: usize) {
         self.hard_reload();
         for video in self.videos.videos.iter().rev().take(take) {
-            match get_id(video) {
-                Some(Some(id)) => {
-                    let path = format!("/tmp/{}.mp4", id);
-                    download_video(&path, &id, &self.app_config);
-                },
-                _ => (),
+            if let Some(id) = get_id(video) {
+                let path = format!("/tmp/{}.mp4", id);
+                download_video(&path, &id, &self.app_config);
             }
         }
     }
@@ -780,6 +771,7 @@ impl YoutubeSubscribtions {
 
             }
             match result {
+                None => (),
                 Some(key_event) => {
                     match key_event {
                         InputEvent::Keyboard(event) => {
@@ -806,7 +798,7 @@ impl YoutubeSubscribtions {
                                 Char(':') => self.command(),
                                 Char('y') => self.yank_video_uri(),
                                 Char('f') | Char('|') => self.filter(),
-                                _ => debug(&format!("key not supported (press h for help)")),
+                                _ => debug(&"key not supported (press h for help)".to_string()),
                             }
                         },
                         InputEvent::Mouse(event) => {
@@ -832,9 +824,8 @@ impl YoutubeSubscribtions {
                         _ => ()
                     }
                 }
-                _ => ()
             }
-            self.i = self.i % self.n;
+            self.i %= self.n;
         };
     }
 }
