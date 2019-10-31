@@ -1,5 +1,3 @@
-extern crate sxd_document;
-extern crate sxd_xpath;
 extern crate dirs;
 extern crate reqwest;
 extern crate terminal_size;
@@ -12,8 +10,6 @@ extern crate roxmltree;
 use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
 use serde::{Serialize, Deserialize};
-use sxd_document::parser;
-use sxd_xpath::{evaluate_xpath, Value};
 use std::fs;
 use std::env;
 use std::io;
@@ -219,34 +215,15 @@ fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Vec<Vide
 }
 
 fn get_videos(xml: String, additional_channel_ids: &[String]) -> Vec<Video> {
-    let package = parser::parse(xml.as_str()).expect("failed to parse XML");
-    let document = package.as_document();
-    match evaluate_xpath(&document, "//outline/@xmlUrl") {
-        Ok(value) =>  {
-            if let Value::Nodeset(urls) = value {
-                let mut urls_from_xml : Vec<String> = urls.iter().flat_map( |url| {
-                    match url.attribute() {
-                        Some(attribute) => Some(attribute.value().to_string()),
-                        None => None
-                    }
-                }).collect::<Vec<String>>();
-                let urls_from_additional = additional_channel_ids.iter().map( |id| "https://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id);
-                urls_from_xml.extend(urls_from_additional);
-                let client = reqwest::Client::builder().h2_prior_knowledge().use_rustls_tls().build().unwrap();
-                urls_from_xml.par_iter().flat_map( |url|
-                    get_channel_videos(&client, url.to_string())
-                ).collect::<Vec<Video>>()
-            }
-            else {
-                vec![]
-            }
-        },
-        Err(err) => {
-            println!("{:?}", err);
-            vec![]
-        }
-    }
-    
+    let document = roxmltree::Document::parse(xml.as_str()).expect("failed to parse XML");
+    let mut urls_from_xml : Vec<String> = document.descendants().filter(
+        |n| n.tag_name().name() == "outline").map(|entry| { entry.attribute("xmlUrl") }).filter_map(|x| x).map(|x| x.to_string()).collect::<Vec<String>>();
+    let urls_from_additional = additional_channel_ids.iter().map( |id| "https://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id);
+    urls_from_xml.extend(urls_from_additional);
+    let client = reqwest::Client::builder().h2_prior_knowledge().use_rustls_tls().build().unwrap();
+    urls_from_xml.par_iter().flat_map( |url|
+        get_channel_videos(&client, url.to_string())
+    ).collect::<Vec<Video>>()
 }
 
 fn to_show_videos(videos: &mut Vec<Video>, start: usize, end: usize, filter: &str) -> Vec<Video> {
