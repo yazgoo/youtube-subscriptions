@@ -12,8 +12,6 @@ keywords = ["cli", "youtube", "terminal"]
 categories = ["command-line-utilities"]
 
 [dependencies]
-sxd-xpath = { version = "0.4.2", default-features = false }
-sxd-document = { version = "0.3.2", default-features = false }
 dirs = { version = "2.0.1", default-features = false }
 serde = { version = "1.0", features = ["derive"], default-features = false }
 serde_json = { version = "1.0", default-features = false }
