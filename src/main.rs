@@ -11,7 +11,6 @@ use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
 use serde::{Serialize, Deserialize};
 use std::fs;
-use std::env;
 use std::io;
 use std::path::Path;
 use std::io::{Read, Write};
@@ -22,7 +21,9 @@ use std::cmp::min;
 use std::process::{Command, Stdio};
 use crossterm_input::{input, RawScreen, InputEvent, MouseEvent, MouseButton};
 use crossterm_input::KeyEvent::{Char, Down, Up, Left, Right};
-use rayon::prelude::*;
+use futures::future::join_all;
+use tokio::runtime::Runtime;
+
 use webbrowser;
 
 fn default_mpv_mode() -> bool {
@@ -110,6 +111,14 @@ fn load_config() -> AppConfig {
     }
 }
 
+fn subscriptions_url() -> &'static str {
+    "https://www.youtube.com/subscription_manager?action_takeout=1"
+}
+
+fn download_subscriptions() {
+    let _res = webbrowser::open(&subscriptions_url());
+}
+
 fn get_subscriptions_xml() -> Result<String, Error> {
     match dirs::home_dir() {
         Some(home) =>
@@ -120,11 +129,10 @@ fn get_subscriptions_xml() -> Result<String, Error> {
                         fs::read_to_string(path)
                     }
                     else {
-                        let url = "https://www.youtube.com/subscription_manager?action_takeout=1";
-                        let _res = webbrowser::open(&url);
+                        download_subscriptions();
                         panic!("configuration is missing
 please download: {} (a browser window should be opened with it).
-make it available as {} ", url, path)
+make it available as {} ", subscriptions_url(), path)
                     }
                 },
                 None =>
@@ -197,33 +205,33 @@ fn get_channel_videos_from_contents(contents: &str) -> Vec<Video> {
     }).collect::<Vec<Video>>()
 }
 
-fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Vec<Video> {
-    let wrapped_response = client.get(channel_url.as_str()).header("Accept-Encoding", "gzip").send();
+async fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Vec<Video> {
+    let wrapped_response = client.get(channel_url.as_str()).header("Accept-Encoding", "gzip").send().await;
     match wrapped_response {
-        Ok(mut response) =>
+        Ok(response) =>
             if response.status().is_success() {
-                get_channel_videos_from_contents(&response.text().unwrap())
+                get_channel_videos_from_contents(&response.text().await.unwrap())
             }
             else {
                 vec![]
             },
             Err(e) => {
                 debug(&format!("error {:?}", e));
+                panic!(e);
                 vec![]
             }
     }
 }
 
-fn get_videos(xml: String, additional_channel_ids: &[String]) -> Vec<Video> {
+async fn get_videos(xml: String, additional_channel_ids: &[String]) -> Vec<Vec<Video>> {
     let document = roxmltree::Document::parse(xml.as_str()).expect("failed to parse XML");
     let mut urls_from_xml : Vec<String> = document.descendants().filter(
         |n| n.tag_name().name() == "outline").map(|entry| { entry.attribute("xmlUrl") }).filter_map(|x| x).map(|x| x.to_string()).collect::<Vec<String>>();
     let urls_from_additional = additional_channel_ids.iter().map( |id| "https://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id);
     urls_from_xml.extend(urls_from_additional);
-    let client = reqwest::Client::builder().h2_prior_knowledge().use_rustls_tls().build().unwrap();
-    urls_from_xml.par_iter().flat_map( |url|
-        get_channel_videos(&client, url.to_string())
-    ).collect::<Vec<Video>>()
+    let client = reqwest::Client::builder().http2_prior_knowledge().build().unwrap();
+    let futs : Vec<_> = urls_from_xml.iter().map(|url| get_channel_videos(&client, url.to_string())).collect();
+    join_all(futs).await
 }
 
 fn to_show_videos(videos: &mut Vec<Video>, start: usize, end: usize, filter: &str) -> Vec<Video> {
@@ -243,12 +251,13 @@ fn save_videos(app_config: &AppConfig, videos: &Videos) {
     fs::write(path, serialized).expect("writing videos json failed");
 }
 
-fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) -> Option<Videos> {
+async fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) -> Option<Videos> {
     match get_subscriptions_xml() {
         Ok(xml) => {
             let path = app_config.cache_path.as_str();
             if reload || fs::metadata(path).is_err() {
-                let mut videos = Videos { videos: get_videos(xml, &app_config.channel_ids)};
+                let vids = get_videos(xml, &app_config.channel_ids).await.iter().flat_map(|x| x).cloned().collect::<Vec<Video>>();
+                let mut videos = Videos { videos:  vids };
                 
                 for vid in videos.videos.iter_mut() {
                     for original_vid in original_videos.videos.iter() {
@@ -521,6 +530,7 @@ fn print_help() {
   o          open selected video in browser
   t          tag untag a video as read
   y          copy video url in system clipboard
+  c          download subscriptions default browser
   ")
 }
 
@@ -579,10 +589,10 @@ impl YoutubeSubscribtions {
         self.move_page(0);
     }
 
-    fn hard_reload(&mut self) {
+    async fn hard_reload(&mut self) {
         let now = Instant::now();
         debug(&"updating video list...".to_string());
-        self.videos = load(true, &self.app_config, &self.videos).unwrap();
+        self.videos = load(true, &self.app_config, &self.videos).await.unwrap();
         debug(&"".to_string());
         self.soft_reload();
         debug(&format!("reload took {} ms", now.elapsed().as_millis()).to_string());
@@ -709,16 +719,6 @@ impl YoutubeSubscribtions {
         self.wait_key_press_and_soft_reload()
     }
 
-    fn download(&mut self, take: usize) {
-        self.hard_reload();
-        for video in self.videos.videos.iter().rev().take(take) {
-            if let Some(id) = get_id(video) {
-                let path = format!("/tmp/{}.mp4", id);
-                download_video(&path, &id, &self.app_config);
-            }
-        }
-    }
-
     fn up(&mut self) {
         self.i = jump(self.i, if self.i > 0 { self.i - 1 } else { self.n - 1 });
     }
@@ -736,8 +736,8 @@ impl YoutubeSubscribtions {
         }
     }
 
-    fn run(&mut self) {
-        self.videos = load(false, &self.app_config, &self.videos).unwrap();
+    async fn run(&mut self) {
+        self.videos = load(false, &self.app_config, &self.videos).await.unwrap();
         self.start = 0;
         self.i = 0;
         smcup();
@@ -767,6 +767,7 @@ impl YoutubeSubscribtions {
                                     quit();
                                     break;
                                 },
+                                Char('c') => download_subscriptions(),
                                 Char('j') | Char('l') | Down => self.down(),
                                 Char('k') | Up => self.up(),
                                 Char('g') | Char('H') => self.i = jump(self.i, 0),
@@ -775,7 +776,7 @@ impl YoutubeSubscribtions {
                                 Char('r') | Char('$') | Left => self.soft_reload(),
                                 Char('P') => self.previous_page(),
                                 Char('N') => self.next_page(),
-                                Char('R') => self.hard_reload(),
+                                Char('R') => self.hard_reload().await,
                                 Char('h') | Char('?') => self.help(),
                                 Char('i') | Right => self.info(),
                                 Char('t') => self.flag_unflag(),
@@ -818,7 +819,6 @@ impl YoutubeSubscribtions {
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
     let mut yts = YoutubeSubscribtions{
             n: 0,
             start: 0,
@@ -828,13 +828,5 @@ fn main() {
             videos: Videos{videos: vec![]},
             app_config: load_config(),
     };
-    match args.len() {
-        2 => {
-            match args[1].parse::<usize>() {
-                Ok(_n) => yts.download(_n),
-                Err(_) => yts.run(),
-            };
-        },
-        _ => yts.run(),
-    }
+    Runtime::new().unwrap().block_on(async { yts.run() });
 }
