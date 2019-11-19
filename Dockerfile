@@ -1,4 +1,4 @@
-FROM ragnaroek/rust-raspberry:1.38.0
+FROM ragnaroek/rust-raspberry:1.39.0
 USER root
 RUN sed -i 's,/pi-tools/arm-bcm2708/arm-bcm2708hardfp-linux-gnueabi/arm-bcm2708hardfp-linux-gnueabi/sysroot,/pi-tools/arm-bcm2708/arm-rpi-4.9.3-linux-gnueabihf/arm-linux-gnueabihf/sysroot,' /home/cross/bin/run.sh
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y wget python3
