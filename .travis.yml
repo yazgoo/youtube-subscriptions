@@ -7,7 +7,7 @@ script:
 services:
   - docker
 rust:
-- stable
+  - 1.39.0
 matrix:
   allow_failures:
   - rust: nightly
