@@ -205,9 +205,8 @@ fn get_channel_videos_from_contents(contents: &str) -> Vec<Video> {
     }).collect::<Vec<Video>>()
 }
 
-async fn get_channel_videos(channel_url: String) -> Vec<Video> {
-    // let client = reqwest::Client::builder().http2_prior_knowledge().build().unwrap();
-    let wrapped_response = reqwest::get(channel_url.as_str()).await;
+async fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Vec<Video> {
+    let wrapped_response = client.get(channel_url.as_str())/*.header("Accept-Encoding", "gzip")*/.send().await;
     match wrapped_response {
         Ok(response) =>
             if response.status().is_success() {
@@ -229,7 +228,8 @@ async fn get_videos(xml: String, additional_channel_ids: &[String]) -> Vec<Vec<V
         |n| n.tag_name().name() == "outline").map(|entry| { entry.attribute("xmlUrl") }).filter_map(|x| x).map(|x| x.to_string()).collect::<Vec<String>>();
     let urls_from_additional = additional_channel_ids.iter().map( |id| "https://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id);
     urls_from_xml.extend(urls_from_additional);
-    let futs : Vec<_> = urls_from_xml.iter().map(|url| get_channel_videos(url.to_string())).collect();
+    let client = reqwest::Client::builder()/*.http2_prior_knowledge()*/.build().unwrap();
+    let futs : Vec<_> = urls_from_xml.iter().map(|url| get_channel_videos(&client, url.to_string())).collect();
     join_all(futs).await
 }
 
