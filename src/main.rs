@@ -206,20 +206,22 @@ fn get_channel_videos_from_contents(contents: &str) -> Vec<Video> {
 }
 
 async fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Vec<Video> {
-    let wrapped_response = client.get(channel_url.as_str()).header("Accept-Encoding", "gzip").send().await;
-    match wrapped_response {
-        Ok(response) =>
-            if response.status().is_success() {
-                get_channel_videos_from_contents(&response.text().await.unwrap())
+    for _i in 0..2 {
+        let wrapped_response = client.get(channel_url.as_str()).header("Accept-Encoding", "gzip").send().await;
+        match wrapped_response {
+            Ok(response) =>
+                if response.status().is_success() {
+                    return get_channel_videos_from_contents(&response.text().await.unwrap())
+                }
+                else {
+                    return vec![]
+                },
+            Err(_e) if _i == 1 => panic!(_e),
+            Err(_) => {
             }
-            else {
-                vec![]
-            },
-            Err(e) => {
-                debug(&format!("error {:?}", e));
-                panic!(e);
-            }
+        }
     }
+    return vec![]
 }
 
 async fn get_videos(xml: String, additional_channel_ids: &[String]) -> Vec<Vec<Video>> {
