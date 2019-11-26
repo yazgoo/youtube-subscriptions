@@ -206,7 +206,7 @@ fn get_channel_videos_from_contents(contents: &str) -> Vec<Video> {
 }
 
 async fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Vec<Video> {
-    let wrapped_response = client.get(channel_url.as_str())/*.header("Accept-Encoding", "gzip")*/.send().await;
+    let wrapped_response = client.get(channel_url.as_str()).header("Accept-Encoding", "gzip").send().await;
     match wrapped_response {
         Ok(response) =>
             if response.status().is_success() {
