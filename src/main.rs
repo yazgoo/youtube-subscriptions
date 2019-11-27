@@ -155,6 +155,10 @@ fn flag_to_string(flag: &Option<Flag>) -> String {
     }
 }
 
+fn default_thumbnail() -> String {
+    "".to_string()
+}
+
 fn default_flag() -> Option<Flag> {
     None
 }
@@ -166,6 +170,8 @@ struct Video {
     url: String,
     published: String,
     description: String,
+    #[serde(default = "default_thumbnail")]
+    thumbnail: String,
     #[serde(default = "default_flag")]
     flag: Option<Flag>
 }
@@ -186,20 +192,22 @@ fn get_channel_videos_from_contents(contents: &str) -> Vec<Video> {
     let document = roxmltree::Document::parse(contents).expect("failed to parse XML");
     let title = get_decendant_node!(document, "title").text().expect("no title found");
     document.descendants().filter(|n| n.tag_name().name() == "entry").map(|entry| {
+        let url = get_decendant_node!(entry, "link").attribute("href").expect("url");
         let video_title = get_decendant_node!(entry, "title").text().expect("no video title found");
-        let video_published = get_decendant_node!(entry, "published").text().expect("no published found");
+        let video_published = get_decendant_node!(entry, "published").text().expect("no thumbnail found");
+        let thumbnail = get_decendant_node!(entry, "thumbnail").attribute("url").expect("no published found");
         let group = get_decendant_node!(entry, "group");
         let description = match get_decendant_node!(group, "description").text() {
             Some(stuff) => stuff,
             None => "",
         };
-        let url = get_decendant_node!(group, "content").attribute("url").expect("url");
         Video { 
             channel: title.to_string(),
             title: video_title.to_string(),
             url: url.to_string(),
             published: video_published.to_string(),
             description: description.to_string(),
+            thumbnail: thumbnail.to_string(),
             flag: default_flag(),
         }
     }).collect::<Vec<Video>>()
@@ -385,7 +393,7 @@ struct YoutubeSubscribtions {
 }
 
 fn print_videos(toshow: &[Video]) {
-    let max = toshow.iter().fold(0, |acc, x| if x.channel.chars().count() > acc { x.channel.chars().count() } else { acc } );
+    let max = toshow.iter().fold(0, |acc, x| std::cmp::max(x.channel.chars().count(), acc));
     let cols = get_cols();
     for video in toshow {
         let published = video.published.split('T').collect::<Vec<&str>>();
@@ -396,12 +404,7 @@ fn print_videos(toshow: &[Video]) {
 }
 
 fn get_id(v: &Video) -> Option<String> {
-    match v.url.split('/').collect::<Vec<&str>>().last().map( |page|
-                                                        page.split('?').collect::<Vec<&str>>().first().map( |s| s.to_string() )) {
-        Some(Some(a)) => Some(a),
-        Some(None) => None,
-        None => None
-    }
+    v.url.split('=').collect::<Vec<&str>>().last().map(|a| a.to_string())
 }
 
 fn print_press_any_key_and_pause() {
@@ -530,6 +533,7 @@ fn print_help() {
   p,enter    plays selected video
   o          open selected video in browser
   t          tag untag a video as read
+  T          display thumbnail in browser
   y          copy video url in system clipboard
   c          download subscriptions default browser
   ")
@@ -612,11 +616,19 @@ impl YoutubeSubscribtions {
         }
     }
 
+    fn display_current_thumbnail(&mut self) {
+        if self.i < self.toshow.len() {
+            let _res = webbrowser::open(&self.toshow[self.i].thumbnail);
+            self.clear_and_print_videos();
+        }
+    }
+
     fn open_current(&mut self) {
         if self.i < self.toshow.len() {
             let url = &self.toshow[self.i].url;
             debug(&format!("opening {}", &url));
             let _res = webbrowser::open(&url);
+            self.clear_and_print_videos();
         }
     }
 
@@ -632,6 +644,7 @@ impl YoutubeSubscribtions {
 
     fn input_with_prefix(&mut self, start_symbol: &str) -> String {
         move_to_bottom();
+        clear_to_end_of_line();
         print!("{}", start_symbol);
         io::stdout().flush().unwrap();
         let input = input();
@@ -781,6 +794,7 @@ impl YoutubeSubscribtions {
                                 Char('h') | Char('?') => self.help(),
                                 Char('i') | Right => self.info(),
                                 Char('t') => self.flag_unflag(),
+                                Char('T') => self.display_current_thumbnail(),
                                 Char('p') | Char('\n') => self.play_current(),
                                 Char('o') => self.open_current(),
                                 Char('/') => self.search(),
