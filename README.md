@@ -1,6 +1,6 @@
 # youtube-subscriptions
 
-terminal UI for viewing youtube subscriptions.
+terminal UI for viewing youtube and peertube subscriptions.
 Especially well suited for Raspberry Pi.
 
 <a href=https://youtu.be/WVZpqXBmB3U>
@@ -45,6 +45,7 @@ example:
     ["/usr/bin/mplayer", "-fs"]
   ],
   "channel_ids": [],
+  "channel_urls": [],
   "mpv_mode": true,
   "mpv_path": "/usr/local/bin/mpv"
 }
@@ -59,6 +60,7 @@ example:
 | youtubedl_format | see [youtube-dl doc](https://github.com/ytdl-org/youtube-dl/blob/master/README.md#format-selection) | `[height <=? 360][ext = mp4]`
 | video_extension  | youtube-dl video extension as per format                                                            | `mp4`
 | channel_ids      | list of additional channel ids which will be also fetched                                           | `[]`
+| channel_urls     | list of additional channel urls which will be also fetched (can be used for peertube)                                           | `[]`
 | mpv_mode         | try and start mpv to play the youtubee video first                                                  | `true`
 | mpv_path         | path to mpv binary (will be use if mpv_mode is true)                                                | `/usr/bin/mpv`
 
