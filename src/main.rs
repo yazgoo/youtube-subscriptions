@@ -6,6 +6,8 @@ extern crate crossterm;
 extern crate serde;
 extern crate clipboard;
 extern crate roxmltree;
+extern crate chrono;
+extern crate base64;
 
 use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
@@ -23,11 +25,15 @@ use crossterm_input::{input, RawScreen, InputEvent, MouseEvent, MouseButton};
 use crossterm_input::KeyEvent::{Char, Down, Up, Left, Right};
 use futures::future::join_all;
 use tokio::runtime::Runtime;
+use chrono::DateTime;
 
 use webbrowser;
 
 fn default_mpv_mode() -> bool {
     true
+}
+fn default_channel_urls() -> Vec<String> {
+    vec![]
 }
 
 fn default_mpv_path() -> String {
@@ -42,6 +48,8 @@ struct AppConfig {
     video_extension: String,
     players: Vec<Vec<String>>,
     channel_ids: Vec<String>,
+    #[serde(default = "default_channel_urls")]
+    channel_urls: Vec<String>,
     #[serde(default = "default_mpv_mode")]
     mpv_mode: bool,
     #[serde(default = "default_mpv_path")]
@@ -63,6 +71,7 @@ impl Default for AppConfig {
                 vec!["/usr/bin/mplayer".to_string(), "-really-quiet".to_string(), "-fs".to_string()],
             ],
             channel_ids: vec![],
+            channel_urls: default_channel_urls(),
             mpv_mode: default_mpv_mode(),
             mpv_path: default_mpv_path(),
         }
@@ -155,6 +164,10 @@ fn flag_to_string(flag: &Option<Flag>) -> String {
     }
 }
 
+fn default_thumbnail() -> String {
+    "".to_string()
+}
+
 fn default_flag() -> Option<Flag> {
     None
 }
@@ -166,6 +179,8 @@ struct Video {
     url: String,
     published: String,
     description: String,
+    #[serde(default = "default_thumbnail")]
+    thumbnail: String,
     #[serde(default = "default_flag")]
     flag: Option<Flag>
 }
@@ -181,28 +196,56 @@ macro_rules! get_decendant_node {
     }
 }
 
-
-fn get_channel_videos_from_contents(contents: &str) -> Vec<Video> {
-    let document = roxmltree::Document::parse(contents).expect("failed to parse XML");
+fn get_youtube_channel_videos(document: roxmltree::Document) -> Vec<Video> {
     let title = get_decendant_node!(document, "title").text().expect("no title found");
     document.descendants().filter(|n| n.tag_name().name() == "entry").map(|entry| {
+        let url = get_decendant_node!(entry, "link").attribute("href").expect("url");
         let video_title = get_decendant_node!(entry, "title").text().expect("no video title found");
-        let video_published = get_decendant_node!(entry, "published").text().expect("no published found");
+        let video_published = get_decendant_node!(entry, "published").text().expect("no thumbnail found");
+        let thumbnail = get_decendant_node!(entry, "thumbnail").attribute("url").expect("no published found");
         let group = get_decendant_node!(entry, "group");
         let description = match get_decendant_node!(group, "description").text() {
             Some(stuff) => stuff,
             None => "",
         };
-        let url = get_decendant_node!(group, "content").attribute("url").expect("url");
         Video { 
             channel: title.to_string(),
             title: video_title.to_string(),
             url: url.to_string(),
             published: video_published.to_string(),
             description: description.to_string(),
+            thumbnail: thumbnail.to_string(),
             flag: default_flag(),
         }
     }).collect::<Vec<Video>>()
+}
+
+fn get_peertube_channel_videos(channel: roxmltree::Node) -> Vec<Video> {
+    let title = get_decendant_node!(channel, "title").text().expect("no title found");
+    channel.descendants().filter(|n| n.tag_name().name() == "item").map(|entry| {
+        let url = get_decendant_node!(entry, "link").text().expect("url");
+        let video_title = get_decendant_node!(entry, "title").text().expect("no video title found");
+        let video_published = get_decendant_node!(entry, "pubDate").text().expect("no published found");
+        let thumbnail = get_decendant_node!(entry, "thumbnail").attribute("url").expect("no thumbnail found");
+        let description = get_decendant_node!(entry, "description").text().expect("");
+        Video { 
+            channel: title.to_string(),
+            title: video_title.to_string(),
+            url: url.to_string(),
+            published: DateTime::parse_from_rfc2822(video_published).expect("parse_from_rfc2822").to_rfc3339().to_string(),
+            description: description.to_string(),
+            thumbnail: thumbnail.to_string(),
+            flag: default_flag(),
+        }
+    }).collect::<Vec<Video>>()
+}
+
+fn get_channel_videos_from_contents(contents: &str) -> Vec<Video> {
+    let document = roxmltree::Document::parse(contents).expect("failed to parse XML");
+    match document.descendants().find(|n| n.tag_name().name() == "channel") {
+        Some(channel) => get_peertube_channel_videos(channel),
+        None => get_youtube_channel_videos(document),
+    }
 }
 
 async fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Vec<Video> {
@@ -221,15 +264,18 @@ async fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Ve
             }
         }
     }
+    debug(&format!("failed opening {}", &channel_url));
     return vec![]
 }
 
-async fn get_videos(xml: String, additional_channel_ids: &[String]) -> Vec<Vec<Video>> {
+async fn get_videos(xml: String, additional_channel_ids: &[String], additional_channel_urls: &[String]) -> Vec<Vec<Video>> {
     let document = roxmltree::Document::parse(xml.as_str()).expect("failed to parse XML");
     let mut urls_from_xml : Vec<String> = document.descendants().filter(
         |n| n.tag_name().name() == "outline").map(|entry| { entry.attribute("xmlUrl") }).filter_map(|x| x).map(|x| x.to_string()).collect::<Vec<String>>();
     let urls_from_additional = additional_channel_ids.iter().map( |id| "https://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id);
+    let urls_from_additional_2 = additional_channel_urls.iter().map( |url| url.to_string() );
     urls_from_xml.extend(urls_from_additional);
+    urls_from_xml.extend(urls_from_additional_2);
     let client = reqwest::Client::builder().http2_prior_knowledge().use_rustls_tls().build().unwrap();
     let futs : Vec<_> = urls_from_xml.iter().map(|url| get_channel_videos(&client, url.to_string())).collect();
     join_all(futs).await
@@ -257,7 +303,7 @@ async fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) ->
         Ok(xml) => {
             let path = app_config.cache_path.as_str();
             if reload || fs::metadata(path).is_err() {
-                let vids = get_videos(xml, &app_config.channel_ids).await.iter().flat_map(|x| x).cloned().collect::<Vec<Video>>();
+                let vids = get_videos(xml, &app_config.channel_ids, &app_config.channel_urls).await.iter().flat_map(|x| x).cloned().collect::<Vec<Video>>();
                 let mut videos = Videos { videos:  vids };
                 
                 for vid in videos.videos.iter_mut() {
@@ -385,22 +431,13 @@ struct YoutubeSubscribtions {
 }
 
 fn print_videos(toshow: &[Video]) {
-    let max = toshow.iter().fold(0, |acc, x| if x.channel.chars().count() > acc { x.channel.chars().count() } else { acc } );
+    let max = toshow.iter().fold(0, |acc, x| std::cmp::max(x.channel.chars().count(), acc));
     let cols = get_cols();
     for video in toshow {
         let published = video.published.split('T').collect::<Vec<&str>>();
         let whitespaces = " ".repeat(max - video.channel.chars().count());
         let s = format!("  {} \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}",  flag_to_string(&video.flag), published[0][5..10].to_string(), video.channel, whitespaces, video.title);
         println!("{}", s.chars().take(min(s.chars().count(), cols-4+9+9+2)).collect::<String>());
-    }
-}
-
-fn get_id(v: &Video) -> Option<String> {
-    match v.url.split('/').collect::<Vec<&str>>().last().map( |page|
-                                                        page.split('?').collect::<Vec<&str>>().first().map( |s| s.to_string() )) {
-        Some(Some(a)) => Some(a),
-        Some(None) => None,
-        None => None
     }
 }
 
@@ -478,13 +515,8 @@ fn download_video(path: &str, id: &str, app_config: &AppConfig) {
     }
 }
 
-fn id_to_url(id: &str) -> String {
-    format!("https://www.youtube.com/watch?v={}", id)
-}
-
-fn play_id(id: &str, app_config: &AppConfig) {
+fn play_url(url: &String, app_config: &AppConfig) {
     if app_config.mpv_mode && fs::metadata(&app_config.mpv_path).is_ok() {
-        let url = id_to_url(&id);
         let message = format!("playing {} with mpv...", url);
         debug(&message);
         read_command_output(
@@ -493,20 +525,18 @@ fn play_id(id: &str, app_config: &AppConfig) {
             .arg("-really-quiet")
             .arg("--ytdl-format")
             .arg(&app_config.youtubedl_format)
-            .arg(url)
+            .arg(&url)
             , &app_config.mpv_path);
     } else {
         clear();
-        let path = format!("{}/{}.{}", app_config.video_path, id, app_config.video_extension);
-        download_video(&path, &id, app_config);
+        let path = format!("{}/{}.{}", app_config.video_path, base64::encode(&url), app_config.video_extension);
+        download_video(&path, &url, app_config);
         play_video(&path, app_config);
     }
 }
 
 fn play(v: &Video, app_config: &AppConfig) {
-    if let Some(id) = get_id(v) {
-        play_id(&id, app_config);
-    }
+    play_url(&v.url, app_config);
 }
 
 fn print_help() {
@@ -530,6 +560,7 @@ fn print_help() {
   p,enter    plays selected video
   o          open selected video in browser
   t          tag untag a video as read
+  T          display thumbnail in browser
   y          copy video url in system clipboard
   c          download subscriptions default browser
   ")
@@ -612,11 +643,19 @@ impl YoutubeSubscribtions {
         }
     }
 
+    fn display_current_thumbnail(&mut self) {
+        if self.i < self.toshow.len() {
+            let _res = webbrowser::open(&self.toshow[self.i].thumbnail);
+            self.clear_and_print_videos();
+        }
+    }
+
     fn open_current(&mut self) {
         if self.i < self.toshow.len() {
             let url = &self.toshow[self.i].url;
             debug(&format!("opening {}", &url));
             let _res = webbrowser::open(&url);
+            self.clear_and_print_videos();
         }
     }
 
@@ -632,6 +671,7 @@ impl YoutubeSubscribtions {
 
     fn input_with_prefix(&mut self, start_symbol: &str) -> String {
         move_to_bottom();
+        clear_to_end_of_line();
         print!("{}", start_symbol);
         io::stdout().flush().unwrap();
         let input = input();
@@ -657,23 +697,19 @@ impl YoutubeSubscribtions {
         hide_cursor();
         clear();
         if s.len() == 2 {
-            if let "o" = s[0] { play_id(&s[1].to_string(), &self.app_config) }
+            if let "o" = s[0] { play_url(&s[1].to_string(), &self.app_config) }
         }
         self.clear_and_print_videos()
     }
 
     fn yank_video_uri(&mut self) {
-        match get_id(&self.toshow[self.i]) {
-            Some(id) => {
-                match ClipboardProvider::new() {
-                    Ok::<ClipboardContext, _>(mut ctx) => { 
-                        ctx.set_contents(id_to_url(&id)).unwrap();
-                        debug(&format!("yanked url for {}", id));
-                    },
-                    Err(e) => debug(&format!("error: {:?}", e)),
-                }
+        let url = &self.toshow[self.i].url;
+        match ClipboardProvider::new() {
+            Ok::<ClipboardContext, _>(mut ctx) => { 
+                ctx.set_contents(url.to_string()).unwrap();
+                debug(&format!("yanked {}", url));
             },
-            _ => debug(&"failed extracting id from video url".to_string()),
+            Err(e) => debug(&format!("error: {:?}", e)),
         }
     }
 
@@ -781,6 +817,7 @@ impl YoutubeSubscribtions {
                                 Char('h') | Char('?') => self.help(),
                                 Char('i') | Right => self.info(),
                                 Char('t') => self.flag_unflag(),
+                                Char('T') => self.display_current_thumbnail(),
                                 Char('p') | Char('\n') => self.play_current(),
                                 Char('o') => self.open_current(),
                                 Char('/') => self.search(),

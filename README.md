@@ -1,6 +1,6 @@
 # youtube-subscriptions
 
-terminal UI for viewing youtube subscriptions.
+terminal UI for viewing youtube and peertube subscriptions.
 Especially well suited for Raspberry Pi.
 
 <a href=https://youtu.be/WVZpqXBmB3U>
@@ -45,6 +45,7 @@ example:
     ["/usr/bin/mplayer", "-fs"]
   ],
   "channel_ids": [],
+  "channel_urls": [],
   "mpv_mode": true,
   "mpv_path": "/usr/local/bin/mpv"
 }
@@ -59,30 +60,11 @@ example:
 | youtubedl_format | see [youtube-dl doc](https://github.com/ytdl-org/youtube-dl/blob/master/README.md#format-selection) | `[height <=? 360][ext = mp4]`
 | video_extension  | youtube-dl video extension as per format                                                            | `mp4`
 | channel_ids      | list of additional channel ids which will be also fetched                                           | `[]`
+| channel_urls     | list of additional channel urls which will be also fetched (can be used for peertube)                                           | `[]`
 | mpv_mode         | try and start mpv to play the youtubee video first                                                  | `true`
 | mpv_path         | path to mpv binary (will be use if mpv_mode is true)                                                | `/usr/bin/mpv`
 
 `__HOME` will be substituted with the home path.
-
-# download mode
-
-You can update the subscriptions and download the last N videos by running.
-Here with N = 5:
-
-```sh
-$ youtube-subscriptions 5
-```
-
-This is very usefull to download your subscriptions in a cron.
-
-Don't forget to put the path were youtube-dl is installed.
-
-Example crontab:
-
-```cron
-PATH=/home/pi/.local/bin/:/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-50 * * * * /home/pi/youtube-subscriptions 5 > /home/pi/youtube-subscriptions.log 2>&1
-```
 
 # cross compiling for raspberry pi
 

@@ -25,3 +25,5 @@ roxmltree = { version = "0.7", default-features = false }
 reqwest = { git="https://github.com/EmbarkStudios/reqwest", version = "= 0.10.0-alpha.2", features = ["gzip", "rustls-tls"] }
 futures = { version = "0.3" , features = ["compat"] }
 tokio = { version = "0.2.0-alpha" }
+chrono = { version = "0.4" }
+base64 = { version = "0.11" }
