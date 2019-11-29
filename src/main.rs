@@ -126,6 +126,11 @@ fn subscriptions_url() -> &'static str {
 
 fn download_subscriptions() {
     let _res = webbrowser::open(&subscriptions_url());
+    debug(&format!("please save file to ~/{}", subscription_manager_relative_path()));
+}
+
+fn subscription_manager_relative_path() -> &'static str {
+    ".config/youtube-subscriptions/subscription_manager"
 }
 
 fn get_subscriptions_xml() -> Result<String, Error> {
@@ -133,7 +138,7 @@ fn get_subscriptions_xml() -> Result<String, Error> {
         Some(home) =>
             match home.to_str() {
                 Some(s) => {
-                    let path = format!("{}/.config/youtube-subscriptions/subscription_manager", s);
+                    let path = format!("{}/{}", s, subscription_manager_relative_path());
                     if fs::metadata(&path).is_ok() {
                         fs::read_to_string(path)
                     }

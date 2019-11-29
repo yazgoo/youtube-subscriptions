@@ -19,14 +19,15 @@ You can download a self-contained binary from [releases page](https://github.com
 
 # setup (youtube)
 
-Download your [youtube subscriptions OPML](https://www.youtube.com/subscription_manager?action_takeout=1).
+Download your [youtube subscriptions OPML](https://www.youtube.com/subscription_manager?action_takeout=1) (you can do that by pressing 'c' in the app).
+
 and save it as the following file:
   ~/.config/youtube-subscriptions/subscription_manager
 
 # setup (peertube)
 
 Create a configuration file (see configuration section)
-and add the channel urls you want to register to to `channel_urls` list.
+and add the channel urls you want to register to `channel_urls` list.
 
 # usage
 
