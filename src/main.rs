@@ -8,7 +8,6 @@ extern crate clipboard;
 extern crate roxmltree;
 extern crate chrono;
 extern crate base64;
-extern crate ctrlc;
 
 use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
