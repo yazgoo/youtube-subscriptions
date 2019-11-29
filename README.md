@@ -1,6 +1,6 @@
 # youtube-subscriptions
 
-terminal UI for viewing youtube and peertube subscriptions.
+terminal UI for viewing youtube and/or peertube subscriptions.
 Especially well suited for Raspberry Pi.
 
 <a href=https://youtu.be/WVZpqXBmB3U>
@@ -17,11 +17,16 @@ Especially well suited for Raspberry Pi.
 
 You can download a self-contained binary from [releases page](https://github.com/yazgoo/youtube-subscriptions/releases)
 
-# setup
+# setup (youtube)
 
 Download your [youtube subscriptions OPML](https://www.youtube.com/subscription_manager?action_takeout=1).
 and save it as the following file:
   ~/.config/youtube-subscriptions/subscription_manager
+
+# setup (peertube)
+
+Create a configuration file (see configuration section)
+and add the channel urls you want to register to to `channel_urls` list.
 
 # usage
 

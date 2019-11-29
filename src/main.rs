@@ -8,6 +8,7 @@ extern crate clipboard;
 extern crate roxmltree;
 extern crate chrono;
 extern crate base64;
+extern crate ctrlc;
 
 use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
@@ -138,10 +139,7 @@ fn get_subscriptions_xml() -> Result<String, Error> {
                         fs::read_to_string(path)
                     }
                     else {
-                        download_subscriptions();
-                        panic!("configuration is missing
-please download: {} (a browser window should be opened with it).
-make it available as {} ", subscriptions_url(), path)
+                        Ok("<opml></opml>".to_string())
                     }
                 },
                 None =>
@@ -540,9 +538,9 @@ fn play(v: &Video, app_config: &AppConfig) {
 }
 
 fn print_help() {
+    println!("\x1b[34;1m{}\x1b[0m", "youtube-subscriptions");
+    println!("\x1b[36m{}\x1b[0m", "a tool to view your video subscriptions in a terminal");
     println!("
-  youtube-subscriptions: a tool to view your youtube subscriptions in a terminal
-
   q          quit
   j,l,down   move down
   k,up       move up
