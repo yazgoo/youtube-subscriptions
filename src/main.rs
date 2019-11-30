@@ -27,6 +27,8 @@ use crossterm_input::KeyEvent::{Char, Down, Up, Left, Right, Ctrl};
 use futures::future::join_all;
 use tokio::runtime::Runtime;
 use chrono::DateTime;
+use regex::Regex;
+
 
 use webbrowser;
 
@@ -284,10 +286,10 @@ async fn get_videos(xml: String, additional_channel_ids: &[String], additional_c
     join_all(futs).await
 }
 
-fn to_show_videos(videos: &mut Vec<Video>, start: usize, end: usize, filter: &str) -> Vec<Video> {
+fn to_show_videos(videos: &mut Vec<Video>, start: usize, end: usize, filter: &Regex) -> Vec<Video> {
     videos.sort_by(|a, b| b.published.cmp(&a.published));
     let filtered_videos = videos.iter().filter(|video| 
-        video.title.contains(filter) || video.channel.contains(filter) 
+        filter.is_match(&video.title) || filter.is_match(&video.channel)
     ).cloned().collect::<Vec<Video>>();
     let new_end = std::cmp::min(end, filtered_videos.len());
     let mut result = filtered_videos[start..new_end].to_vec();
@@ -426,7 +428,8 @@ fn pause() {
 struct YoutubeSubscribtions {
     n: usize,
     start: usize,
-    filter: String,
+    search: Regex,
+    filter: Regex,
     i: usize,
     toshow: Vec<Video>,
     videos: Videos,
@@ -663,13 +666,15 @@ impl YoutubeSubscribtions {
     }
 
 
-    fn find(&mut self, s: String) -> usize {
+    fn find_next(&mut self) -> usize {
         for (i, video) in self.toshow.iter().enumerate() {
-            if video.channel.contains(s.as_str()) || video.title.contains(s.as_str()) {
-                return i;
+            if i > self.i {
+                if self.search.is_match(&video.title) || self.search.is_match(&video.channel) {
+                    return i;
+                }
             }
         }
-        0
+        self.i 
     }
 
     fn input_with_prefix(&mut self, start_symbol: &str) -> String {
@@ -681,15 +686,21 @@ impl YoutubeSubscribtions {
         input.read_line().unwrap()
     }
 
+    fn search_next(&mut self) {
+        clear_selector(self.i);
+        self.i = self.find_next();
+    }
+
     fn search(&mut self) {
         let s = self.input_with_prefix("/");
-        self.i = self.find(s);
+        self.search = Regex::new(&format!(".*(?i){}.*", s)).unwrap();
+        self.i = self.find_next();
         self.clear_and_print_videos()
     }
 
     fn filter(&mut self) {
         let s = self.input_with_prefix("|");
-        self.filter = s;
+        self.filter = Regex::new(&format!(".*(?i){}.*", s)).unwrap();
         self.move_page(0);
         self.clear_and_print_videos()
     }
@@ -824,6 +835,7 @@ impl YoutubeSubscribtions {
                                 Char('p') | Char('\n') => self.play_current(),
                                 Char('o') => self.open_current(),
                                 Char('/') => self.search(),
+                                Char('n') => self.search_next(),
                                 Char(':') => self.command(),
                                 Char('y') => self.yank_video_uri(),
                                 Char('f') | Char('|') => self.filter(),
@@ -863,7 +875,8 @@ fn main() {
     let mut yts = YoutubeSubscribtions{
             n: 0,
             start: 0,
-            filter: "".to_string(),
+            search: Regex::new("").unwrap(),
+            filter: Regex::new("").unwrap(),
             i: 0,
             toshow: vec![],
             videos: Videos{videos: vec![]},
