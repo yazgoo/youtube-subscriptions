@@ -98,16 +98,27 @@ fn load_config() -> AppConfig {
                                             match Path::new(&_res.cache_path).parent() {
                                                 Some(dirname) => match fs::create_dir_all(&dirname) {
                                                     Ok(_) => _res,
-                                                    Err(e) => panic!("error while creating cache directory for {}: {:?}", &_res.cache_path, e)
+                                                    Err(e) => {
+                                                        debug(&format!("error while creating cache directory for {}: {:?}", &_res.cache_path, e));
+                                                        _res
+                                                    }
                                                 }
-                                                None => panic!("failed to find dirname of {}", &_res.cache_path),
+                                                None => {
+                                                    debug(&format!("failed to find dirname of {}", &_res.cache_path));
+                                                    _res
+                                                }
                                             }
                                         }
-                                        Err(e) =>
-                                            panic!("error while creating video path {}: {:?}", &_res.video_path, e)
+                                        Err(e) => {
+                                            debug(&format!("error while creating video path {}: {:?}", &_res.video_path, e));
+                                            _res
+                                        }
                                     }
                                 }
-                                Err(e) => panic!("error parsing configuration: {:?}", e)
+                                Err(e) => {
+                                    debug(&format!("error parsing configuration: {:?}", e));
+                                    AppConfig { ..Default::default() }
+                                }
                             }
                         },
                         Err(_) =>
@@ -148,11 +159,15 @@ fn get_subscriptions_xml() -> Result<String, Error> {
                         Ok("<opml></opml>".to_string())
                     }
                 },
-                None =>
-                    panic!("failed reading subscription_manager")
+                None => {
+                    debug("failed conversting home to str");
+                    Ok("<opml></opml>".to_string())
+                }
             },
-        None =>
-            panic!("failed reading subscription_manager")
+        None => {
+            debug("failed finding home dir");
+            Ok("<opml></opml>".to_string())
+        }
     }
 }
 
@@ -252,27 +267,23 @@ fn get_channel_videos_from_contents(contents: &str) -> Vec<Video> {
     }
 }
 
-async fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Vec<Video> {
+async fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Option<Vec<Video>> {
     for _i in 0..2 {
         let wrapped_response = client.get(channel_url.as_str()).header("Accept-Encoding", "gzip").send().await;
         match wrapped_response {
             Ok(response) =>
                 if response.status().is_success() {
-                    return get_channel_videos_from_contents(&response.text().await.unwrap())
-                }
-                else {
-                    return vec![]
+                    return Some(get_channel_videos_from_contents(&response.text().await.unwrap()))
                 },
-            Err(_e) if _i == 1 => panic!(_e),
+            Err(_e) if _i == 1 => debug(&format!("failed loading {}: {}", &channel_url, _e)),
             Err(_) => {
             }
         }
     }
-    debug(&format!("failed opening {}", &channel_url));
-    return vec![]
+    return None
 }
 
-async fn get_videos(xml: String, additional_channel_ids: &[String], additional_channel_urls: &[String]) -> Vec<Vec<Video>> {
+async fn get_videos(xml: String, additional_channel_ids: &[String], additional_channel_urls: &[String]) -> Vec<Option<Vec<Video>>> {
     let document = roxmltree::Document::parse(xml.as_str()).expect("failed to parse XML");
     let mut urls_from_xml : Vec<String> = document.descendants().filter(
         |n| n.tag_name().name() == "outline").map(|entry| { entry.attribute("xmlUrl") }).filter_map(|x| x).map(|x| x.to_string()).collect::<Vec<String>>();
@@ -307,7 +318,20 @@ async fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) ->
         Ok(xml) => {
             let path = app_config.cache_path.as_str();
             if reload || fs::metadata(path).is_err() {
-                let vids = get_videos(xml, &app_config.channel_ids, &app_config.channel_urls).await.iter().flat_map(|x| x).cloned().collect::<Vec<Video>>();
+                let mut one_query_failed = false;
+                let empty_vec = vec![];
+                let vids = get_videos(xml, &app_config.channel_ids, &app_config.channel_urls).await
+                    .iter().map(|x| 
+                        if x.is_some() {
+                            x.as_ref().unwrap()
+                        } else {
+                            one_query_failed = true;
+                            &empty_vec
+                        }
+                        ).flat_map(|x| x).cloned().collect::<Vec<Video>>();
+                if one_query_failed {
+                    return None
+                }
                 let mut videos = Videos { videos:  vids };
                 
                 for vid in videos.videos.iter_mut() {
