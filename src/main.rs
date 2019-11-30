@@ -28,13 +28,17 @@ use futures::future::join_all;
 use tokio::runtime::Runtime;
 use chrono::DateTime;
 use regex::Regex;
-
-
+use std::collections::HashMap;
 use webbrowser;
 
 fn default_mpv_mode() -> bool {
     true
 }
+
+fn default_etags() -> HashMap<String, String> {
+    HashMap::new()
+}
+
 fn default_channel_urls() -> Vec<String> {
     vec![]
 }
@@ -193,6 +197,8 @@ struct Video {
 #[derive(Serialize, Deserialize, Debug)]
 struct Videos {
     videos: Vec<Video>,
+    #[serde(default = "default_etags")]
+    etags: HashMap<String, String>,
 }
 
 macro_rules! get_decendant_node {
@@ -273,7 +279,7 @@ async fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Ve
     return vec![]
 }
 
-async fn get_videos(xml: String, additional_channel_ids: &[String], additional_channel_urls: &[String]) -> Vec<Vec<Video>> {
+async fn get_videos(xml: String, additional_channel_ids: &[String], additional_channel_urls: &[String], original_etags: &HashMap<String, String>) -> (Vec<Vec<Video>>, HashMap<String,String>) {
     let document = roxmltree::Document::parse(xml.as_str()).expect("failed to parse XML");
     let mut urls_from_xml : Vec<String> = document.descendants().filter(
         |n| n.tag_name().name() == "outline").map(|entry| { entry.attribute("xmlUrl") }).filter_map(|x| x).map(|x| x.to_string()).collect::<Vec<String>>();
@@ -283,7 +289,8 @@ async fn get_videos(xml: String, additional_channel_ids: &[String], additional_c
     urls_from_xml.extend(urls_from_additional_2);
     let client = reqwest::Client::builder().http2_prior_knowledge().use_rustls_tls().build().unwrap();
     let futs : Vec<_> = urls_from_xml.iter().map(|url| get_channel_videos(&client, url.to_string())).collect();
-    join_all(futs).await
+    let videos = join_all(futs).await;
+    (videos, HashMap::new())
 }
 
 fn to_show_videos(videos: &mut Vec<Video>, start: usize, end: usize, filter: &Regex) -> Vec<Video> {
@@ -308,8 +315,8 @@ async fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) ->
         Ok(xml) => {
             let path = app_config.cache_path.as_str();
             if reload || fs::metadata(path).is_err() {
-                let vids = get_videos(xml, &app_config.channel_ids, &app_config.channel_urls).await.iter().flat_map(|x| x).cloned().collect::<Vec<Video>>();
-                let mut videos = Videos { videos:  vids };
+                let (vids, newEtags) = get_videos(xml, &app_config.channel_ids, &app_config.channel_urls, &original_videos.etags).await;
+                let mut videos = Videos { videos:  vids.iter().flat_map(|x| x).cloned().collect::<Vec<Video>>(), etags: newEtags };
                 
                 for vid in videos.videos.iter_mut() {
                     for original_vid in original_videos.videos.iter() {
@@ -879,7 +886,7 @@ fn main() {
             filter: Regex::new("").unwrap(),
             i: 0,
             toshow: vec![],
-            videos: Videos{videos: vec![]},
+            videos: Videos{videos: vec![], etags: default_etags()},
             app_config: load_config(),
     };
     ctrlc::set_handler(move || {
