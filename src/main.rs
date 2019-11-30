@@ -25,7 +25,6 @@ use std::process::{Command, Stdio};
 use crossterm_input::{input, RawScreen, InputEvent, MouseEvent, MouseButton};
 use crossterm_input::KeyEvent::{Char, Down, Up, Left, Right, Ctrl};
 use futures::future::join_all;
-use tokio::runtime::Runtime;
 use chrono::DateTime;
 use regex::Regex;
 
@@ -871,7 +870,8 @@ impl YoutubeSubscribtions {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let mut yts = YoutubeSubscribtions{
             n: 0,
             start: 0,
@@ -887,5 +887,5 @@ fn main() {
         std::process::exit(0);
     })
     .expect("Error setting Ctrl-C handler");
-    Runtime::new().unwrap().block_on(yts.run());
+    yts.run().await;
 }
