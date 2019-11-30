@@ -7,6 +7,7 @@ extern crate serde;
 extern crate clipboard;
 extern crate roxmltree;
 extern crate chrono;
+extern crate ctrlc;
 extern crate base64;
 
 use std::time::Instant;
@@ -22,7 +23,7 @@ use terminal_size::{Width, Height, terminal_size};
 use std::cmp::min;
 use std::process::{Command, Stdio};
 use crossterm_input::{input, RawScreen, InputEvent, MouseEvent, MouseButton};
-use crossterm_input::KeyEvent::{Char, Down, Up, Left, Right};
+use crossterm_input::KeyEvent::{Char, Down, Up, Left, Right, Ctrl};
 use futures::future::join_all;
 use tokio::runtime::Runtime;
 use chrono::DateTime;
@@ -128,6 +129,11 @@ fn subscriptions_url() -> &'static str {
 
 fn download_subscriptions() {
     let _res = webbrowser::open(&subscriptions_url());
+    debug(&format!("please save file to ~/{}", subscription_manager_relative_path()));
+}
+
+fn subscription_manager_relative_path() -> &'static str {
+    ".config/youtube-subscriptions/subscription_manager"
 }
 
 fn get_subscriptions_xml() -> Result<String, Error> {
@@ -135,7 +141,7 @@ fn get_subscriptions_xml() -> Result<String, Error> {
         Some(home) =>
             match home.to_str() {
                 Some(s) => {
-                    let path = format!("{}/.config/youtube-subscriptions/subscription_manager", s);
+                    let path = format!("{}/{}", s, subscription_manager_relative_path());
                     if fs::metadata(&path).is_ok() {
                         fs::read_to_string(path)
                     }
@@ -808,7 +814,7 @@ impl YoutubeSubscribtions {
                     match key_event {
                         InputEvent::Keyboard(event) => {
                             match event {
-                                Char('q') => {
+                                Ctrl('c') | Char('q') => {
                                     quit();
                                     break;
                                 },
@@ -876,5 +882,10 @@ fn main() {
             videos: Videos{videos: vec![]},
             app_config: load_config(),
     };
+    ctrlc::set_handler(move || {
+        quit();
+        std::process::exit(0);
+    })
+    .expect("Error setting Ctrl-C handler");
     Runtime::new().unwrap().block_on(yts.run());
 }
