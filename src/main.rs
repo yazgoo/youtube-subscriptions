@@ -211,17 +211,23 @@ struct Videos {
 
 macro_rules! get_decendant_node {
     ( $node:expr, $name:expr  ) => {
-        $node.descendants().find(|n| n.tag_name().name() == $name).expect($name)
+        $node.descendants().find(|n| n.tag_name().name() == $name).unwrap_or($node)
     }
 }
 
 fn get_youtube_channel_videos(document: roxmltree::Document) -> Vec<Video> {
-    let title = get_decendant_node!(document, "title").text().expect("no title found");
+    let title = match document.descendants().find(|n| n.tag_name().name() == "title") {
+        Some(node) => node.text().unwrap_or(""),
+        None => {
+            debug("did not find title node");
+            ""
+        }
+    };
     document.descendants().filter(|n| n.tag_name().name() == "entry").map(|entry| {
-        let url = get_decendant_node!(entry, "link").attribute("href").expect("url");
-        let video_title = get_decendant_node!(entry, "title").text().expect("no video title found");
-        let video_published = get_decendant_node!(entry, "published").text().expect("no thumbnail found");
-        let thumbnail = get_decendant_node!(entry, "thumbnail").attribute("url").expect("no published found");
+        let url = get_decendant_node!(entry, "link").attribute("href").unwrap_or("");
+        let video_title = get_decendant_node!(entry, "title").text().unwrap_or("");
+        let video_published = get_decendant_node!(entry, "published").text().unwrap_or("");
+        let thumbnail = get_decendant_node!(entry, "thumbnail").attribute("url").unwrap_or("");
         let group = get_decendant_node!(entry, "group");
         let description = match get_decendant_node!(group, "description").text() {
             Some(stuff) => stuff,
@@ -240,18 +246,22 @@ fn get_youtube_channel_videos(document: roxmltree::Document) -> Vec<Video> {
 }
 
 fn get_peertube_channel_videos(channel: roxmltree::Node) -> Vec<Video> {
-    let title = get_decendant_node!(channel, "title").text().expect("no title found");
+    let title = get_decendant_node!(channel, "title").text().unwrap_or("");
     channel.descendants().filter(|n| n.tag_name().name() == "item").map(|entry| {
-        let url = get_decendant_node!(entry, "link").text().expect("url");
-        let video_title = get_decendant_node!(entry, "title").text().expect("no video title found");
-        let video_published = get_decendant_node!(entry, "pubDate").text().expect("no published found");
-        let thumbnail = get_decendant_node!(entry, "thumbnail").attribute("url").expect("no thumbnail found");
-        let description = get_decendant_node!(entry, "description").text().expect("");
+        let url = get_decendant_node!(entry, "link").text().unwrap_or("");
+        let video_title = get_decendant_node!(entry, "title").text().unwrap_or("");
+        let video_published = get_decendant_node!(entry, "pubDate").text().unwrap_or("");
+        let thumbnail = get_decendant_node!(entry, "thumbnail").attribute("url").unwrap_or("");
+        let description = get_decendant_node!(entry, "description").text().unwrap_or("");
+        let date = match DateTime::parse_from_rfc2822(video_published) {
+            Ok(x) => x.to_rfc3339(),
+            Err(_) => "2002-10-02T10:00:00-05:00".to_string(),
+        };
         Video { 
             channel: title.to_string(),
             title: video_title.to_string(),
             url: url.to_string(),
-            published: DateTime::parse_from_rfc2822(video_published).expect("parse_from_rfc2822").to_rfc3339().to_string(),
+            published: date,
             description: description.to_string(),
             thumbnail: thumbnail.to_string(),
             flag: default_flag(),
@@ -260,10 +270,16 @@ fn get_peertube_channel_videos(channel: roxmltree::Node) -> Vec<Video> {
 }
 
 fn get_channel_videos_from_contents(contents: &str) -> Vec<Video> {
-    let document = roxmltree::Document::parse(contents).expect("failed to parse XML");
-    match document.descendants().find(|n| n.tag_name().name() == "channel") {
-        Some(channel) => get_peertube_channel_videos(channel),
-        None => get_youtube_channel_videos(document),
+    match roxmltree::Document::parse(contents) {
+        Ok(document) =>
+            match document.descendants().find(|n| n.tag_name().name() == "channel") {
+                Some(channel) => get_peertube_channel_videos(channel),
+                None => get_youtube_channel_videos(document),
+            },
+        Err(e) => {
+            debug(&format!("failed parsing xml {}", e));
+            vec![]
+        },
     }
 }
 
@@ -273,7 +289,10 @@ async fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Op
         match wrapped_response {
             Ok(response) =>
                 if response.status().is_success() {
-                    return Some(get_channel_videos_from_contents(&response.text().await.unwrap()))
+                    match response.text().await {
+                        Ok(text) => return Some(get_channel_videos_from_contents(&text)),
+                        Err(_) => { }
+                    }
                 },
             Err(_e) if _i == 1 => debug(&format!("failed loading {}: {}", &channel_url, _e)),
             Err(_) => {
@@ -284,16 +303,30 @@ async fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Op
 }
 
 async fn get_videos(xml: String, additional_channel_ids: &[String], additional_channel_urls: &[String]) -> Vec<Option<Vec<Video>>> {
-    let document = roxmltree::Document::parse(xml.as_str()).expect("failed to parse XML");
-    let mut urls_from_xml : Vec<String> = document.descendants().filter(
-        |n| n.tag_name().name() == "outline").map(|entry| { entry.attribute("xmlUrl") }).filter_map(|x| x).map(|x| x.to_string()).collect::<Vec<String>>();
-    let urls_from_additional = additional_channel_ids.iter().map( |id| "https://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id);
-    let urls_from_additional_2 = additional_channel_urls.iter().map( |url| url.to_string() );
-    urls_from_xml.extend(urls_from_additional);
-    urls_from_xml.extend(urls_from_additional_2);
-    let client = reqwest::Client::builder().http2_prior_knowledge().use_rustls_tls().build().unwrap();
-    let futs : Vec<_> = urls_from_xml.iter().map(|url| get_channel_videos(&client, url.to_string())).collect();
-    join_all(futs).await
+    match roxmltree::Document::parse(xml.as_str()) {
+        Ok(document) => {
+            let mut urls_from_xml : Vec<String> = document.descendants().filter(
+                |n| n.tag_name().name() == "outline").map(|entry| { entry.attribute("xmlUrl") }).filter_map(|x| x).map(|x| x.to_string()).collect::<Vec<String>>();
+            let urls_from_additional = additional_channel_ids.iter().map( |id| "https://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id);
+            let urls_from_additional_2 = additional_channel_urls.iter().map( |url| url.to_string() );
+            urls_from_xml.extend(urls_from_additional);
+            urls_from_xml.extend(urls_from_additional_2);
+            match reqwest::Client::builder().http2_prior_knowledge().use_rustls_tls().build() {
+                Ok(client) => {
+                    let futs : Vec<_> = urls_from_xml.iter().map(|url| get_channel_videos(&client, url.to_string())).collect();
+                    join_all(futs).await
+                },
+                Err(e) => {
+                    debug(&format!("failed instantiating client {}", e));
+                    vec![None]
+                }
+            }
+        }
+        Err(e) => {
+            debug(&format!("failed parsing xml {}", e));
+            vec![None]
+        }
+    }
 }
 
 fn to_show_videos(videos: &mut Vec<Video>, start: usize, end: usize, filter: &Regex) -> Vec<Video> {
@@ -309,8 +342,19 @@ fn to_show_videos(videos: &mut Vec<Video>, start: usize, end: usize, filter: &Re
 
 fn save_videos(app_config: &AppConfig, videos: &Videos) {
     let path = app_config.cache_path.as_str();
-    let serialized = serde_json::to_string(&videos).unwrap();
-    fs::write(path, serialized).expect("writing videos json failed");
+    match serde_json::to_string(&videos) {
+        Ok(serialized) => {
+            match fs::write(&path, serialized) {
+                Ok(_) => {},
+                Err(e) => {
+                    debug(&format!("failed writing {} {}", &path, e));
+                }
+            }
+        },
+        Err(e) => {
+            debug(&format!("failed serializing videos {}", e));
+        }
+    }
 }
 
 async fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) -> Option<Videos> {
@@ -322,11 +366,12 @@ async fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) ->
                 let empty_vec = vec![];
                 let vids = get_videos(xml, &app_config.channel_ids, &app_config.channel_urls).await
                     .iter().map(|x| 
-                        if x.is_some() {
-                            x.as_ref().unwrap()
-                        } else {
-                            one_query_failed = true;
-                            &empty_vec
+                        match x.as_ref() {
+                            Some(res) => res,
+                            None => {
+                                one_query_failed = true;
+                                &empty_vec
+                            }
                         }
                         ).flat_map(|x| x).cloned().collect::<Vec<Video>>();
                 if one_query_failed {
@@ -346,7 +391,13 @@ async fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) ->
             } else {
                 match fs::read_to_string(path) {
                     Ok(s) => 
-                        Some(serde_json::from_str(s.as_str()).unwrap()),
+                        match serde_json::from_str(s.as_str()) {
+                            Ok(res) => Some(res),
+                            Err(e) => {
+                                debug(&format!("failed reading {} {}", path, e));
+                                None
+                            }
+                        }
                     Err(_) =>
                         None
                 }
@@ -376,45 +427,52 @@ fn get_cols() -> usize {
     }
 }
 
+fn flush_stdout() {
+    match io::stdout().flush() {
+        Ok(_) => {},
+        Err(_) => {},
+    }
+}
+
 fn hide_cursor() {
     print!("\x1b[?25l");
-    io::stdout().flush().unwrap();
+    flush_stdout();
 }
 
 fn smcup() {
     print!("\x1b[?1049h");
-    io::stdout().flush().unwrap();
+    flush_stdout();
 }
 
 fn rmcup() {
     print!("\x1b[?1049l");
-    io::stdout().flush().unwrap();
+    flush_stdout();
 }
 
 fn clear() {
     print!("\x1b[2J");
-    io::stdout().flush().unwrap();
+    flush_stdout();
     move_cursor(0);
 }
 
 fn show_cursor() {
     print!("\x1b[?25h");
-    io::stdout().flush().unwrap();
+    flush_stdout();
 }
 
 fn move_cursor(i: usize) {
     print!("\x1b[{};0f", i + 1);
-    io::stdout().flush().unwrap();
+    flush_stdout();
 }
 
 fn move_to_bottom() {
     print!("\x1b[{};0f", get_lines() + 1);
-    io::stdout().flush().unwrap();
+    flush_stdout();
 }
 
 fn clear_to_end_of_line() {
     print!("\x1b[K");
-    io::stdout().flush().unwrap();
+    flush_stdout();
 }
 
 fn debug(s: &str) {
@@ -422,19 +480,19 @@ fn debug(s: &str) {
     clear_to_end_of_line();
     move_to_bottom();
     print!("{}", s);
-    io::stdout().flush().unwrap();
+    flush_stdout();
 }
 
 fn print_selector(i: usize) {
     move_cursor(i);
     print!("\x1b[1m|\x1b[0m\r");
-    io::stdout().flush().unwrap();
+    flush_stdout();
 }
 
 fn clear_selector(i: usize) {
     move_cursor(i);
     print!(" ");
-    io::stdout().flush().unwrap();
+    flush_stdout();
 }
 
 fn jump(i: usize, new_i: usize) -> usize {
@@ -480,20 +538,32 @@ fn read_command_output(command: &mut Command, binary: &str) {
         .spawn() {
             Ok(mut child) => {
                 let stdout_option = child.stdout.take();
-                if stdout_option.is_some() {
-                    let stdout = stdout_option.unwrap();
-                    for byte in stdout.bytes() {
-                        print!("{}", byte.unwrap() as char);
-                        io::stdout().flush().unwrap();
-                    }
+                match stdout_option {
+                    Some(stdout) => 
+                        for byte_result in stdout.bytes() {
+                            match byte_result {
+                                Ok(byte) => {
+                                    print!("{}", byte as char);
+                                    flush_stdout();
+                                },
+                                Err(_) => { }
+                            }
+                        },
+                    None => debug("no stdout")
                 }
                 let stderr_option = child.stderr.take();
-                if stderr_option.is_some() {
-                    let stderr = stderr_option.unwrap();
-                    for byte in stderr.bytes() {
-                        print!("{}", byte.unwrap() as char);
-                        io::stdout().flush().unwrap();
-                    }
+                match stderr_option {
+                    Some(stderr) => 
+                        for byte_result in stderr.bytes() {
+                            match byte_result {
+                                Ok(byte) => {
+                                    print!("{}", byte as char);
+                                    flush_stdout();
+                                },
+                                Err(_) => { }
+                            }
+                        },
+                    None => debug("no stderr")
                 }
                 match child.wait() {
                     Ok(status) => { 
@@ -653,7 +723,11 @@ impl YoutubeSubscribtions {
     async fn hard_reload(&mut self) {
         let now = Instant::now();
         debug(&"updating video list...".to_string());
-        self.videos = load(true, &self.app_config, &self.videos).await.unwrap();
+        match load(true, &self.app_config, &self.videos).await
+        {
+            Some(videos) => self.videos = videos,
+            None =>  debug("could not load videos"),
+        }
         debug(&"".to_string());
         self.soft_reload();
         debug(&format!("reload took {} ms", now.elapsed().as_millis()).to_string());
@@ -704,9 +778,9 @@ impl YoutubeSubscribtions {
         move_to_bottom();
         clear_to_end_of_line();
         print!("{}", start_symbol);
-        io::stdout().flush().unwrap();
+        flush_stdout();
         let input = input();
-        input.read_line().unwrap()
+        input.read_line().unwrap_or("".to_string())
     }
 
     fn search_next(&mut self) {
@@ -716,15 +790,29 @@ impl YoutubeSubscribtions {
 
     fn search(&mut self) {
         let s = self.input_with_prefix("/");
-        self.search = Regex::new(&format!(".*(?i){}.*", s)).unwrap();
-        self.i = self.find_next();
+        match Regex::new(&format!(".*(?i){}.*", s)) {
+            Ok(regex) => {
+                self.search = regex;
+                self.i = self.find_next();
+            },
+            Err(_) => {
+                debug("failing creating regex")
+            }
+        }
         self.clear_and_print_videos()
     }
 
     fn filter(&mut self) {
         let s = self.input_with_prefix("|");
-        self.filter = Regex::new(&format!(".*(?i){}.*", s)).unwrap();
-        self.move_page(0);
+        match Regex::new(&format!(".*(?i){}.*", s)) {
+            Ok(regex) => {
+                self.filter = regex;
+                self.move_page(0);
+            },
+            Err(_) => {
+                debug("failing creating regex")
+            }
+        }
         self.clear_and_print_videos()
     }
 
@@ -743,8 +831,10 @@ impl YoutubeSubscribtions {
         let url = &self.toshow[self.i].url;
         match ClipboardProvider::new() {
             Ok::<ClipboardContext, _>(mut ctx) => { 
-                ctx.set_contents(url.to_string()).unwrap();
-                debug(&format!("yanked {}", url));
+                match ctx.set_contents(url.to_string()) {
+                    Ok(_) => debug(&format!("yanked {}", url)),
+                    Err(e) => debug(&format!("failed yanking {}: {}", url, e))
+                }
             },
             Err(e) => debug(&format!("error: {:?}", e)),
         }
@@ -811,7 +901,10 @@ impl YoutubeSubscribtions {
     }
 
     async fn run(&mut self) {
-        self.videos = load(false, &self.app_config, &self.videos).await.unwrap();
+        match load(false, &self.app_config, &self.videos).await {
+            Some(videos) => self.videos = videos,
+            None => debug("no video to load")
+        };
         self.start = 0;
         self.i = 0;
         smcup();
@@ -824,12 +917,17 @@ impl YoutubeSubscribtions {
             let input = input();
             let result;
             {
-                input.enable_mouse_mode().unwrap();
+                match input.enable_mouse_mode() {
+                    Ok(_) => {},
+                    Err(_) => {}
+                }
                 let _screen = RawScreen::into_raw_mode();
                 let mut stdin = input.read_sync();
                 result = stdin.next();
-                input.disable_mouse_mode().unwrap();
-
+                match input.disable_mouse_mode() {
+                    Ok(_) => {},
+                    Err(_) => {}
+                }
             }
             match result {
                 None => (),
@@ -896,20 +994,27 @@ impl YoutubeSubscribtions {
 
 #[tokio::main]
 async fn main() {
-    let mut yts = YoutubeSubscribtions{
-            n: 0,
-            start: 0,
-            search: Regex::new("").unwrap(),
-            filter: Regex::new("").unwrap(),
-            i: 0,
-            toshow: vec![],
-            videos: Videos{videos: vec![]},
-            app_config: load_config(),
-    };
-    ctrlc::set_handler(move || {
+    let _ = ctrlc::set_handler(move || {
         quit();
         std::process::exit(0);
-    })
-    .expect("Error setting Ctrl-C handler");
-    yts.run().await;
+    });
+    match Regex::new("") {
+        Ok(empty_regex) => {
+            let empty_regex_2 = empty_regex.clone();
+            let mut yts = YoutubeSubscribtions{
+                n: 0,
+                start: 0,
+                search: empty_regex,
+                filter: empty_regex_2,
+                i: 0,
+                toshow: vec![],
+                videos: Videos{videos: vec![]},
+                app_config: load_config(),
+            };
+        yts.run().await;
+        },
+        Err(_) => {
+            println!("failed creating regex")
+        }
+    }
 }
