@@ -9,6 +9,7 @@ extern crate roxmltree;
 extern crate chrono;
 extern crate ctrlc;
 extern crate base64;
+extern crate html2text;
 
 use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
@@ -34,6 +35,11 @@ use webbrowser;
 fn default_mpv_mode() -> bool {
     true
 }
+
+fn default_content() -> Option<String> {
+    None
+}
+
 fn default_channel_urls() -> Vec<String> {
     vec![]
 }
@@ -201,7 +207,9 @@ struct Video {
     #[serde(default = "default_thumbnail")]
     thumbnail: String,
     #[serde(default = "default_flag")]
-    flag: Option<Flag>
+    flag: Option<Flag>,
+    #[serde(default = "default_content")]
+    content: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -233,6 +241,7 @@ fn get_youtube_channel_videos(document: roxmltree::Document) -> Vec<Video> {
             Some(stuff) => stuff,
             None => "",
         };
+        let content = get_decendant_node!(group, "content").text().map(|x| x.to_string());
         Video { 
             channel: title.to_string(),
             title: video_title.to_string(),
@@ -241,6 +250,7 @@ fn get_youtube_channel_videos(document: roxmltree::Document) -> Vec<Video> {
             description: description.to_string(),
             thumbnail: thumbnail.to_string(),
             flag: default_flag(),
+            content: content,
         }
     }).collect::<Vec<Video>>()
 }
@@ -257,6 +267,7 @@ fn get_peertube_channel_videos(channel: roxmltree::Node) -> Vec<Video> {
             Ok(x) => x.to_rfc3339(),
             Err(_) => "2002-10-02T10:00:00-05:00".to_string(),
         };
+        let content = get_decendant_node!(entry, "encoded").text().map(|x| x.to_string());
         Video { 
             channel: title.to_string(),
             title: video_title.to_string(),
@@ -264,6 +275,7 @@ fn get_peertube_channel_videos(channel: roxmltree::Node) -> Vec<Video> {
             published: date,
             description: description.to_string(),
             thumbnail: thumbnail.to_string(),
+            content: content,
             flag: default_flag(),
         }
     }).collect::<Vec<Video>>()
@@ -311,7 +323,7 @@ async fn get_videos(xml: String, additional_channel_ids: &[String], additional_c
             let urls_from_additional_2 = additional_channel_urls.iter().map( |url| url.to_string() );
             urls_from_xml.extend(urls_from_additional);
             urls_from_xml.extend(urls_from_additional_2);
-            match reqwest::Client::builder().http2_prior_knowledge().use_rustls_tls().build() {
+            match reqwest::Client::builder().use_rustls_tls().build() {
                 Ok(client) => {
                     let futs : Vec<_> = urls_from_xml.iter().map(|url| get_channel_videos(&client, url.to_string())).collect();
                     join_all(futs).await
@@ -518,12 +530,14 @@ struct YoutubeSubscribtions {
 }
 
 fn print_videos(toshow: &[Video]) {
-    let max = toshow.iter().fold(0, |acc, x| std::cmp::max(x.channel.chars().count(), acc));
     let cols = get_cols();
+    let channel_max_size = cols / 3;
+    let max = toshow.iter().fold(0, |acc, x| std::cmp::max(std::cmp::min(x.channel.chars().count(), channel_max_size), acc));
     for video in toshow {
         let published = video.published.split('T').collect::<Vec<&str>>();
-        let whitespaces = " ".repeat(max - video.channel.chars().count());
-        let s = format!("  {} \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}",  flag_to_string(&video.flag), published[0][5..10].to_string(), video.channel, whitespaces, video.title);
+        let whitespaces = " ".repeat(max - std::cmp::min(video.channel.chars().count(), channel_max_size));
+        let channel_short = video.channel.chars().take(channel_max_size).collect::<String>();
+        let s = format!("  {} \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}",  flag_to_string(&video.flag), published[0][5..10].to_string(), channel_short, whitespaces, video.title);
         println!("{}", s.chars().take(min(s.chars().count(), cols-4+9+9+2)).collect::<String>());
     }
 }
@@ -671,6 +685,14 @@ fn print_info(v: &Video) {
     println!("from \x1b[36m{}\x1b[0m", v.channel);
     println!();
     println!("{}", v.description);
+    match &v.content {
+        Some(x) => {
+            println!();
+            let cols = get_cols();
+            println!("{}", html2text::from_read(x.as_bytes(), cols));
+        },
+        None => {}
+    }
 }
 
 fn quit() {
@@ -758,6 +780,7 @@ impl YoutubeSubscribtions {
             let url = &self.toshow[self.i].url;
             debug(&format!("opening {}", &url));
             let _res = webbrowser::open(&url);
+            self.flag(&Some(Flag::Read));
             self.clear_and_print_videos();
         }
     }
@@ -840,17 +863,16 @@ impl YoutubeSubscribtions {
         }
     }
 
-    fn wait_key_press_and_soft_reload(&mut self) {
+    fn wait_key_press_and_clear_and_print_videos(&mut self) {
         pause();
-        clear();
-        self.soft_reload();
+        self.clear_and_print_videos()
     }
 
     fn info(&mut self) {
         if self.i < self.toshow.len() {
             clear();
             print_info(&self.toshow[self.i]);
-            self.wait_key_press_and_soft_reload()
+            self.wait_key_press_and_clear_and_print_videos()
         }
     }
 
@@ -880,7 +902,7 @@ impl YoutubeSubscribtions {
     fn help(&mut self) {
         clear();
         print_help();
-        self.wait_key_press_and_soft_reload()
+        self.wait_key_press_and_clear_and_print_videos()
     }
 
     fn up(&mut self) {
