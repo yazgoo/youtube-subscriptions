@@ -234,7 +234,9 @@ fn get_youtube_channel_videos(document: roxmltree::Document) -> Vec<Video> {
     document.descendants().filter(|n| n.tag_name().name() == "entry").map(|entry| {
         let url = get_decendant_node!(entry, "link").attribute("href").unwrap_or("");
         let video_title = get_decendant_node!(entry, "title").text().unwrap_or("");
-        let video_published = get_decendant_node!(entry, "published").text().unwrap_or("");
+        let video_published = get_decendant_node!(entry, "published").text().unwrap_or(
+            get_decendant_node!(entry, "updated").text().unwrap_or("")
+            );
         let thumbnail = get_decendant_node!(entry, "thumbnail").attribute("url").unwrap_or("");
         let group = get_decendant_node!(entry, "group");
         let description = match get_decendant_node!(group, "description").text() {
@@ -537,7 +539,13 @@ fn print_videos(toshow: &[Video]) {
         let published = video.published.split('T').collect::<Vec<&str>>();
         let whitespaces = " ".repeat(max - std::cmp::min(video.channel.chars().count(), channel_max_size));
         let channel_short = video.channel.chars().take(channel_max_size).collect::<String>();
-        let s = format!("  {} \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}",  flag_to_string(&video.flag), published[0][5..10].to_string(), channel_short, whitespaces, video.title);
+        let published_short = if published.len() > 0 && published[0].len() >= 10 {
+            published[0][5..10].to_string()
+        }
+        else {
+            "?? ??".to_string()
+        };
+        let s = format!("  {} \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}",  flag_to_string(&video.flag), published_short, channel_short, whitespaces, video.title);
         println!("{}", s.chars().take(min(s.chars().count(), cols-4+9+9+2)).collect::<String>());
     }
 }
