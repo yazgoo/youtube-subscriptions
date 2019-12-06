@@ -86,56 +86,41 @@ impl Default for AppConfig {
     }
 }
 
-fn load_config() -> AppConfig {
+fn load_config() -> Result<AppConfig, Error> {
     match dirs::home_dir() {
         Some(home) => {
             match home.to_str() {
                 Some(h) => {
                     let path = format!("{}/.config/youtube-subscriptions/config.json",
                                        h);
-                    match fs::read_to_string(path) {
-                        Ok(s) => {
-                            match serde_json::from_str::<AppConfig>(s.as_str()) {
-                                Ok(mut _res) => {
-                                    _res.video_path = _res.video_path.replace("__HOME", &h);
-                                    match fs::create_dir_all(&_res.video_path) {
-                                        Ok(_) => {
-                                            _res.cache_path = _res.cache_path.replace("__HOME", &h);
-                                            match Path::new(&_res.cache_path).parent() {
-                                                Some(dirname) => match fs::create_dir_all(&dirname) {
-                                                    Ok(_) => _res,
-                                                    Err(e) => {
-                                                        debug(&format!("error while creating cache directory for {}: {:?}", &_res.cache_path, e));
-                                                        _res
-                                                    }
-                                                }
-                                                None => {
-                                                    debug(&format!("failed to find dirname of {}", &_res.cache_path));
-                                                    _res
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            debug(&format!("error while creating video path {}: {:?}", &_res.video_path, e));
-                                            _res
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    debug(&format!("error parsing configuration: {:?}", e));
-                                    AppConfig { ..Default::default() }
-                                }
-                            }
-                        },
-                        Err(_) =>
-                            AppConfig { ..Default::default() }
+                    let s = fs::read_to_string(path)?;
+                    let mut _res = serde_json::from_str::<AppConfig>(s.as_str())?;
+                    _res.video_path = _res.video_path.replace("__HOME", &h);
+                    fs::create_dir_all(&_res.video_path)?;
+                    _res.cache_path = _res.cache_path.replace("__HOME", &h);
+                    match Path::new(&_res.cache_path).parent() {
+                        Some(dirname) => fs::create_dir_all(&dirname)?,
+                        None => {
+                            debug(&format!("failed to find dirname of {}", &_res.cache_path));
+                        }
                     }
-                }
-                None => AppConfig { ..Default::default() }
+                    Ok(_res)
+                },
+                None => Ok(AppConfig { ..Default::default() })
             }
         },
         None =>
+            Ok(AppConfig { ..Default::default() })
+    }
+}
+
+fn load_config_fallback() -> AppConfig {
+    match load_config() {
+        Ok(res) => res,
+        Err(e) => {
+            debug(&format!("load_config err: {}", e));
             AppConfig { ..Default::default() }
+        }
     }
 }
 
@@ -1039,7 +1024,7 @@ async fn main() {
                 i: 0,
                 toshow: vec![],
                 videos: Videos{videos: vec![]},
-                app_config: load_config(),
+                app_config: load_config_fallback(),
             };
         yts.run().await;
         },
