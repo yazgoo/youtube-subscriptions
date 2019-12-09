@@ -530,8 +530,13 @@ fn print_videos(toshow: &[Video]) {
         else {
             "?? ??".to_string()
         };
-        let s = format!("  {} \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}",  flag_to_string(&video.flag), published_short, channel_short, whitespaces, video.title);
-        println!("{}", s.chars().take(min(s.chars().count(), cols-4+9+9+2)).collect::<String>());
+        let s = format!(" {}{} \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}",  
+            flag_to_string(&video.flag),
+            (if video.thumbnail != "".to_string() { " +" } else { "  " }),
+            published_short, channel_short, whitespaces,
+            video.title
+            );
+        println!("{}", s.chars().take(min(s.chars().count(), cols-4+9+9+1)).collect::<String>());
     }
 }
 
