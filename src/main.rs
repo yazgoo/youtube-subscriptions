@@ -28,7 +28,8 @@ use crossterm_input::KeyEvent::{Char, Down, Up, Left, Right, Ctrl};
 use futures::future::join_all;
 use chrono::DateTime;
 use regex::Regex;
-
+use reqwest::header::{HeaderValue, HeaderMap, ETAG, IF_NONE_MATCH, ACCEPT_ENCODING};
+use std::collections::HashMap;
 
 use webbrowser;
 
@@ -184,6 +185,7 @@ fn default_flag() -> Option<Flag> {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Video {
+    channel_url: String,
     channel: String,
     title: String,
     url: String,
@@ -197,8 +199,17 @@ struct Video {
     content: Option<String>,
 }
 
+type ChannelEtags = HashMap<String, Option<String>>;
+
 #[derive(Serialize, Deserialize, Debug)]
 struct Videos {
+    channel_etags: ChannelEtags,
+    videos: Vec<Video>,
+}
+
+struct ChanelVideos {
+    channel_url: String,
+    etag: Option<String>,
     videos: Vec<Video>,
 }
 
@@ -208,7 +219,7 @@ macro_rules! get_decendant_node {
     }
 }
 
-fn get_youtube_channel_videos(document: roxmltree::Document) -> Vec<Video> {
+fn get_youtube_channel_videos(document: roxmltree::Document, channel_url: &String) -> Vec<Video> {
     let title = match document.descendants().find(|n| n.tag_name().name() == "title") {
         Some(node) => node.text().unwrap_or(""),
         None => {
@@ -238,11 +249,12 @@ fn get_youtube_channel_videos(document: roxmltree::Document) -> Vec<Video> {
             thumbnail: thumbnail.to_string(),
             flag: default_flag(),
             content: content,
+            channel_url: channel_url.to_string()
         }
     }).collect::<Vec<Video>>()
 }
 
-fn get_peertube_channel_videos(channel: roxmltree::Node) -> Vec<Video> {
+fn get_peertube_channel_videos(channel: roxmltree::Node, channel_url: &String) -> Vec<Video> {
     let title = get_decendant_node!(channel, "title").text().unwrap_or("");
     channel.descendants().filter(|n| n.tag_name().name() == "item").map(|entry| {
         let url = get_decendant_node!(entry, "link").text().unwrap_or("");
@@ -264,16 +276,17 @@ fn get_peertube_channel_videos(channel: roxmltree::Node) -> Vec<Video> {
             thumbnail: thumbnail.to_string(),
             content: content,
             flag: default_flag(),
+            channel_url: channel_url.to_string()
         }
     }).collect::<Vec<Video>>()
 }
 
-fn get_channel_videos_from_contents(contents: &str) -> Vec<Video> {
+fn get_channel_videos_from_contents(contents: &str, channel_url: &String) -> Vec<Video> {
     match roxmltree::Document::parse(contents) {
         Ok(document) =>
             match document.descendants().find(|n| n.tag_name().name() == "channel") {
-                Some(channel) => get_peertube_channel_videos(channel),
-                None => get_youtube_channel_videos(document),
+                Some(channel) => get_peertube_channel_videos(channel, &channel_url),
+                None => get_youtube_channel_videos(document, &channel_url),
             },
         Err(e) => {
             debug(&format!("failed parsing xml {}", e));
@@ -282,17 +295,62 @@ fn get_channel_videos_from_contents(contents: &str) -> Vec<Video> {
     }
 }
 
-async fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Option<Vec<Video>> {
+fn get_original_channel_videos(channel_url: &String, channel_etag: &Option<&String>, original_videos: &Videos) -> Option<ChanelVideos> {
+    let mut channel_videos: Vec<Video> = vec![];
+    for video in original_videos.videos.iter() {
+        if &video.channel_url == channel_url {
+            channel_videos.push(video.clone())
+        }
+    };
+    Some(ChanelVideos {
+                        channel_url: channel_url.to_string(),
+                        etag: channel_etag.map(|x| x.to_string()),
+                        videos: channel_videos,
+                    })
+}
+
+fn get_headers(channel_etag: Option<&String>) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("*/*"));
+    match channel_etag {
+        Some(etag) => 
+            match HeaderValue::from_str(etag.as_str()) {
+                Ok(s) => {
+                    headers.insert(IF_NONE_MATCH, s);
+                },
+                _ => {}
+            },
+        _ => {}
+    }
+    headers
+}
+
+async fn get_channel_videos(client: &reqwest::Client, channel_url: String, channel_etag: Option<&String>, original_videos: &Videos) -> Option<ChanelVideos> {
     for _i in 0..2 {
-        let wrapped_response = client.get(channel_url.as_str()).header("Accept-Encoding", "gzip").send().await;
+        let request = client.get(channel_url.as_str())
+            .headers(get_headers(channel_etag));
+        let wrapped_response = request.send().await;
         match wrapped_response {
-            Ok(response) =>
-                if response.status().is_success() {
+            Ok(response) => {
+                let status = response.status();
+                if status.as_u16() == 304 {
+                    return get_original_channel_videos(&channel_url, &channel_etag, &original_videos);
+                }
+                else if status.is_success() {
+                    let headers = response.headers();
+                    let etag_opt_opt = headers.get(ETAG).map (|x| x.to_str().ok().map(|y| y.to_string()));
                     match response.text().await {
-                        Ok(text) => return Some(get_channel_videos_from_contents(&text)),
+                        Ok(text) => { 
+                            return Some(
+                            ChanelVideos {
+                                channel_url: channel_url.to_string(),
+                                etag: match etag_opt_opt { Some(Some(x)) => Some(x), _ => None },
+                                videos: get_channel_videos_from_contents(&text, &channel_url)
+                            })},
                         Err(_) => { }
                     }
-                },
+                }
+            },
             Err(_e) if _i == 1 => debug(&format!("failed loading {}: {}", &channel_url, _e)),
             Err(_) => {
             }
@@ -301,7 +359,7 @@ async fn get_channel_videos(client: &reqwest::Client, channel_url: String) -> Op
     return None
 }
 
-async fn get_videos(xml: String, additional_channel_ids: &[String], additional_channel_urls: &[String]) -> Vec<Option<Vec<Video>>> {
+async fn get_videos(xml: String, additional_channel_ids: &[String], additional_channel_urls: &[String], original_videos: &Videos) -> Vec<Option<ChanelVideos>> {
     match roxmltree::Document::parse(xml.as_str()) {
         Ok(document) => {
             let mut urls_from_xml : Vec<String> = document.descendants().filter(
@@ -312,7 +370,13 @@ async fn get_videos(xml: String, additional_channel_ids: &[String], additional_c
             urls_from_xml.extend(urls_from_additional_2);
             match reqwest::Client::builder().use_rustls_tls().build() {
                 Ok(client) => {
-                    let futs : Vec<_> = urls_from_xml.iter().map(|url| get_channel_videos(&client, url.to_string())).collect();
+                    let futs : Vec<_> = urls_from_xml.iter().map(|url| {
+                        let etag = match original_videos.channel_etags.get(&url.to_string()) {
+                            Some(Some(string)) => Some(string),
+                            _ => None
+                        };
+                        get_channel_videos(&client, url.to_string(), etag, &original_videos)
+                    }).collect();
                     join_all(futs).await
                 },
                 Err(e) => {
@@ -363,10 +427,14 @@ async fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) ->
             if reload || fs::metadata(path).is_err() {
                 let mut one_query_failed = false;
                 let empty_vec = vec![];
-                let vids = get_videos(xml, &app_config.channel_ids, &app_config.channel_urls).await
+                let mut etags : ChannelEtags = HashMap::new();
+                let vids = get_videos(xml, &app_config.channel_ids, &app_config.channel_urls, &original_videos).await
                     .iter().map(|x| 
                         match x.as_ref() {
-                            Some(res) => res,
+                            Some(res) => { 
+                                etags.insert(res.channel_url.clone(), res.etag.clone());
+                                &res.videos
+                            },
                             None => {
                                 one_query_failed = true;
                                 &empty_vec
@@ -376,7 +444,10 @@ async fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) ->
                 if one_query_failed {
                     return None
                 }
-                let mut videos = Videos { videos:  vids };
+                let mut videos = Videos {
+                    channel_etags: etags,
+                    videos:  vids
+                };
                 
                 for vid in videos.videos.iter_mut() {
                     for original_vid in original_videos.videos.iter() {
@@ -1028,7 +1099,7 @@ async fn main() {
                 filter: empty_regex_2,
                 i: 0,
                 toshow: vec![],
-                videos: Videos{videos: vec![]},
+                videos: Videos{channel_etags: HashMap::new(), videos: vec![]},
                 app_config: load_config_fallback(),
             };
         yts.run().await;
