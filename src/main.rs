@@ -734,7 +734,7 @@ fn download_video(path: &str, id: &str, app_config: &AppConfig) {
     }
 }
 
-fn play_url(url: &String, app_config: &AppConfig) {
+fn play_url(url: &String, kind: &ItemKind, app_config: &AppConfig) {
     if app_config.mpv_mode && fs::metadata(&app_config.mpv_path).is_ok() {
         let message = format!("playing {} with mpv...", url);
         debug(&message);
@@ -754,14 +754,21 @@ fn play_url(url: &String, app_config: &AppConfig) {
             };
     } else {
         clear();
-        let path = format!("{}/{}.{}", app_config.video_path, base64::encode(&url), app_config.video_extension);
-        download_video(&path, &url, app_config);
-        play_video(&path, app_config);
+        match kind {
+            ItemKind::Audio => {
+                play_video(&url, app_config);
+            },
+            _ => {
+                let path = format!("{}/{}.{}", app_config.video_path, base64::encode(&url), app_config.video_extension);
+                download_video(&path, &url, app_config);
+                play_video(&path, app_config);
+            }
+        }
     }
 }
 
 fn play(v: &Item, app_config: &AppConfig) {
-    play_url(&v.url, app_config);
+    play_url(&v.url, &v.kind, app_config);
 }
 
 fn print_help() {
@@ -957,7 +964,7 @@ impl YoutubeSubscribtions {
         hide_cursor();
         clear();
         if s.len() == 2 {
-            if let "o" = s[0] { play_url(&s[1].to_string(), &self.app_config) }
+            if let "o" = s[0] { play_url(&s[1].to_string(), &ItemKind::Video, &self.app_config) }
         }
         self.clear_and_print_videos()
     }
