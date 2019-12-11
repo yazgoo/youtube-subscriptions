@@ -432,7 +432,7 @@ async fn get_videos(xml: String, additional_channel_ids: &[String], additional_c
 fn to_show_videos(videos: &mut Vec<Item>, start: usize, end: usize, filter: &Regex) -> Vec<Item> {
     videos.sort_by(|a, b| b.published.cmp(&a.published));
     let filtered_videos = videos.iter().filter(|video| 
-        filter.is_match(&video.title) || filter.is_match(&video.channel)
+        filter.is_match(&video.title) || filter.is_match(&video.channel) || filter.is_match(&format!("{:?}", video.kind))
     ).cloned().collect::<Vec<Item>>();
     let new_end = std::cmp::min(end, filtered_videos.len());
     let mut result = filtered_videos[start..new_end].to_vec();
