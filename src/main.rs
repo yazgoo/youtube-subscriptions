@@ -45,6 +45,14 @@ fn default_channel_urls() -> Vec<String> {
     vec![]
 }
 
+fn default_kind_symbols() -> HashMap<String, String> {
+    let mut symbols : HashMap<String, String> = HashMap::new();
+    symbols.insert("Audio".to_string(), "a".to_string());
+    symbols.insert("Video".to_string(), "v".to_string());
+    symbols.insert("Other".to_string(), "o".to_string());
+    symbols
+}
+
 fn default_mpv_path() -> String {
     "/usr/bin/mpv".to_string()
 }
@@ -55,6 +63,8 @@ struct AppConfig {
     cache_path: String,
     youtubedl_format: String,
     video_extension: String,
+    #[serde(default = "default_kind_symbols")]
+    kind_symbols: HashMap<String, String>,
     players: Vec<Vec<String>>,
     channel_ids: Vec<String>,
     #[serde(default = "default_channel_urls")]
@@ -68,6 +78,7 @@ struct AppConfig {
 impl Default for AppConfig {
     fn default() -> AppConfig {
         AppConfig {
+            kind_symbols: default_kind_symbols(),
             video_path: "/tmp".to_string(),
             cache_path: "__HOME/.cache/yts/yts.json".to_string(),
             youtubedl_format: "[height <=? 360][ext = mp4]".to_string(),
@@ -183,8 +194,23 @@ fn default_flag() -> Option<Flag> {
     None
 }
 
+fn kind_symbol(app_config: &AppConfig, kind: &ItemKind) -> String {
+    match app_config.kind_symbols.get(&format!("{:?}", kind).to_string()) {
+        Some(symbol) => symbol.to_string(),
+        _ => " ".to_string(),
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct Video {
+enum ItemKind {
+    Video,
+    Audio,
+    Other,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Item {
+    kind: ItemKind,
     channel_url: String,
     channel: String,
     title: String,
@@ -202,15 +228,15 @@ struct Video {
 type ChannelEtags = HashMap<String, Option<String>>;
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Videos {
+struct Items {
     channel_etags: ChannelEtags,
-    videos: Vec<Video>,
+    videos: Vec<Item>,
 }
 
-struct ChanelVideos {
+struct ChanelItems {
     channel_url: String,
     etag: Option<String>,
-    videos: Vec<Video>,
+    videos: Vec<Item>,
 }
 
 macro_rules! get_decendant_node {
@@ -219,7 +245,7 @@ macro_rules! get_decendant_node {
     }
 }
 
-fn get_youtube_channel_videos(document: roxmltree::Document, channel_url: &String) -> Vec<Video> {
+fn get_rss_videos(document: roxmltree::Document, channel_url: &String) -> Vec<Item> {
     let title = match document.descendants().find(|n| n.tag_name().name() == "title") {
         Some(node) => node.text().unwrap_or(""),
         None => {
@@ -228,19 +254,22 @@ fn get_youtube_channel_videos(document: roxmltree::Document, channel_url: &Strin
         }
     };
     document.descendants().filter(|n| n.tag_name().name() == "entry").map(|entry| {
+        let mut kind = ItemKind::Other;
         let url = get_decendant_node!(entry, "link").attribute("href").unwrap_or("");
         let video_title = get_decendant_node!(entry, "title").text().unwrap_or("");
         let video_published = get_decendant_node!(entry, "published").text().unwrap_or(
             get_decendant_node!(entry, "updated").text().unwrap_or("")
             );
         let thumbnail = get_decendant_node!(entry, "thumbnail").attribute("url").unwrap_or("");
+        if thumbnail != "".to_string() { kind = ItemKind::Video } 
         let group = get_decendant_node!(entry, "group");
         let description = match get_decendant_node!(group, "description").text() {
             Some(stuff) => stuff,
             None => "",
         };
         let content = get_decendant_node!(group, "content").text().map(|x| x.to_string());
-        Video { 
+        Item { 
+            kind: kind,
             channel: title.to_string(),
             title: video_title.to_string(),
             url: url.to_string(),
@@ -251,23 +280,31 @@ fn get_youtube_channel_videos(document: roxmltree::Document, channel_url: &Strin
             content: content,
             channel_url: channel_url.to_string()
         }
-    }).collect::<Vec<Video>>()
+    }).collect::<Vec<Item>>()
 }
 
-fn get_peertube_channel_videos(channel: roxmltree::Node, channel_url: &String) -> Vec<Video> {
+fn get_atom_videos(channel: roxmltree::Node, channel_url: &String) -> Vec<Item> {
     let title = get_decendant_node!(channel, "title").text().unwrap_or("");
     channel.descendants().filter(|n| n.tag_name().name() == "item").map(|entry| {
-        let url = get_decendant_node!(entry, "link").text().unwrap_or("");
+        let mut kind = ItemKind::Other;
+        let url = get_decendant_node!(entry, "enclosure").attribute("url").map( |x| {
+            kind = ItemKind::Audio;
+            x
+        }).unwrap_or(
+            get_decendant_node!(entry, "link").text().unwrap_or("")
+        );
         let video_title = get_decendant_node!(entry, "title").text().unwrap_or("");
         let video_published = get_decendant_node!(entry, "pubDate").text().unwrap_or("");
         let thumbnail = get_decendant_node!(entry, "thumbnail").attribute("url").unwrap_or("");
+        if thumbnail != "".to_string() { kind = ItemKind::Video; }
         let description = get_decendant_node!(entry, "description").text().unwrap_or("");
         let date = match DateTime::parse_from_rfc2822(video_published) {
             Ok(x) => x.to_rfc3339(),
             Err(_) => "2002-10-02T10:00:00-05:00".to_string(),
         };
         let content = get_decendant_node!(entry, "encoded").text().map(|x| x.to_string());
-        Video { 
+        Item { 
+            kind: kind,
             channel: title.to_string(),
             title: video_title.to_string(),
             url: url.to_string(),
@@ -278,15 +315,15 @@ fn get_peertube_channel_videos(channel: roxmltree::Node, channel_url: &String) -
             flag: default_flag(),
             channel_url: channel_url.to_string()
         }
-    }).collect::<Vec<Video>>()
+    }).collect::<Vec<Item>>()
 }
 
-fn get_channel_videos_from_contents(contents: &str, channel_url: &String) -> Vec<Video> {
+fn get_channel_videos_from_contents(contents: &str, channel_url: &String) -> Vec<Item> {
     match roxmltree::Document::parse(contents) {
         Ok(document) =>
             match document.descendants().find(|n| n.tag_name().name() == "channel") {
-                Some(channel) => get_peertube_channel_videos(channel, &channel_url),
-                None => get_youtube_channel_videos(document, &channel_url),
+                Some(channel) => get_atom_videos(channel, &channel_url),
+                None => get_rss_videos(document, &channel_url),
             },
         Err(e) => {
             debug(&format!("failed parsing xml {}", e));
@@ -295,14 +332,14 @@ fn get_channel_videos_from_contents(contents: &str, channel_url: &String) -> Vec
     }
 }
 
-fn get_original_channel_videos(channel_url: &String, channel_etag: &Option<&String>, original_videos: &Videos) -> Option<ChanelVideos> {
-    let mut channel_videos: Vec<Video> = vec![];
+fn get_original_channel_videos(channel_url: &String, channel_etag: &Option<&String>, original_videos: &Items) -> Option<ChanelItems> {
+    let mut channel_videos: Vec<Item> = vec![];
     for video in original_videos.videos.iter() {
         if &video.channel_url == channel_url {
             channel_videos.push(video.clone())
         }
     };
-    Some(ChanelVideos {
+    Some(ChanelItems {
                         channel_url: channel_url.to_string(),
                         etag: channel_etag.map(|x| x.to_string()),
                         videos: channel_videos,
@@ -325,7 +362,7 @@ fn get_headers(channel_etag: Option<&String>) -> HeaderMap {
     headers
 }
 
-async fn get_channel_videos(client: &reqwest::Client, channel_url: String, channel_etag: Option<&String>, original_videos: &Videos) -> Option<ChanelVideos> {
+async fn get_channel_videos(client: &reqwest::Client, channel_url: String, channel_etag: Option<&String>, original_videos: &Items) -> Option<ChanelItems> {
     for _i in 0..2 {
         let request = client.get(channel_url.as_str())
             .headers(get_headers(channel_etag));
@@ -342,7 +379,7 @@ async fn get_channel_videos(client: &reqwest::Client, channel_url: String, chann
                     match response.text().await {
                         Ok(text) => { 
                             return Some(
-                            ChanelVideos {
+                            ChanelItems {
                                 channel_url: channel_url.to_string(),
                                 etag: match etag_opt_opt { Some(Some(x)) => Some(x), _ => None },
                                 videos: get_channel_videos_from_contents(&text, &channel_url)
@@ -359,7 +396,7 @@ async fn get_channel_videos(client: &reqwest::Client, channel_url: String, chann
     return None
 }
 
-async fn get_videos(xml: String, additional_channel_ids: &[String], additional_channel_urls: &[String], original_videos: &Videos) -> Vec<Option<ChanelVideos>> {
+async fn get_videos(xml: String, additional_channel_ids: &[String], additional_channel_urls: &[String], original_videos: &Items) -> Vec<Option<ChanelItems>> {
     match roxmltree::Document::parse(xml.as_str()) {
         Ok(document) => {
             let mut urls_from_xml : Vec<String> = document.descendants().filter(
@@ -392,18 +429,18 @@ async fn get_videos(xml: String, additional_channel_ids: &[String], additional_c
     }
 }
 
-fn to_show_videos(videos: &mut Vec<Video>, start: usize, end: usize, filter: &Regex) -> Vec<Video> {
+fn to_show_videos(videos: &mut Vec<Item>, start: usize, end: usize, filter: &Regex) -> Vec<Item> {
     videos.sort_by(|a, b| b.published.cmp(&a.published));
     let filtered_videos = videos.iter().filter(|video| 
-        filter.is_match(&video.title) || filter.is_match(&video.channel)
-    ).cloned().collect::<Vec<Video>>();
+        filter.is_match(&video.title) || filter.is_match(&video.channel) || filter.is_match(&format!("{:?}", video.kind))
+    ).cloned().collect::<Vec<Item>>();
     let new_end = std::cmp::min(end, filtered_videos.len());
     let mut result = filtered_videos[start..new_end].to_vec();
     result.reverse();
     result
 }
 
-fn save_videos(app_config: &AppConfig, videos: &Videos) {
+fn save_videos(app_config: &AppConfig, videos: &Items) {
     let path = app_config.cache_path.as_str();
     match serde_json::to_string(&videos) {
         Ok(serialized) => {
@@ -420,7 +457,7 @@ fn save_videos(app_config: &AppConfig, videos: &Videos) {
     }
 }
 
-async fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) -> Option<Videos> {
+async fn load(reload: bool, app_config: &AppConfig, original_videos: &Items) -> Option<Items> {
     match get_subscriptions_xml() {
         Ok(xml) => {
             let path = app_config.cache_path.as_str();
@@ -440,11 +477,11 @@ async fn load(reload: bool, app_config: &AppConfig, original_videos: &Videos) ->
                                 &empty_vec
                             }
                         }
-                        ).flat_map(|x| x).cloned().collect::<Vec<Video>>();
+                        ).flat_map(|x| x).cloned().collect::<Vec<Item>>();
                 if one_query_failed {
                     return None
                 }
-                let mut videos = Videos {
+                let mut videos = Items {
                     channel_etags: etags,
                     videos:  vids
                 };
@@ -582,12 +619,12 @@ struct YoutubeSubscribtions {
     search: Regex,
     filter: Regex,
     i: usize,
-    toshow: Vec<Video>,
-    videos: Videos,
+    toshow: Vec<Item>,
+    videos: Items,
     app_config: AppConfig,
 }
 
-fn print_videos(toshow: &[Video]) {
+fn print_videos(app_config: &AppConfig, toshow: &[Item]) {
     let cols = get_cols();
     let channel_max_size = cols / 3;
     let max = toshow.iter().fold(0, |acc, x| std::cmp::max(std::cmp::min(x.channel.chars().count(), channel_max_size), acc));
@@ -601,9 +638,9 @@ fn print_videos(toshow: &[Video]) {
         else {
             "?? ??".to_string()
         };
-        let s = format!(" {}{} \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}",  
+        let s = format!(" {} {} \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}",  
             flag_to_string(&video.flag),
-            (if video.thumbnail != "".to_string() { " +" } else { "  " }),
+            kind_symbol(&app_config, &video.kind),
             published_short, channel_short, whitespaces,
             video.title
             );
@@ -701,14 +738,20 @@ fn play_url(url: &String, app_config: &AppConfig) {
     if app_config.mpv_mode && fs::metadata(&app_config.mpv_path).is_ok() {
         let message = format!("playing {} with mpv...", url);
         debug(&message);
-        read_command_output(
-            Command::new(&app_config.mpv_path)
+            match Command::new(&app_config.mpv_path)
             .arg("-fs")
             .arg("-really-quiet")
             .arg("--ytdl-format")
             .arg(&app_config.youtubedl_format)
-            .arg(&url)
-            , &app_config.mpv_path);
+            .arg(&url).spawn() {
+                Ok(mut child) => {
+                    match child.wait() {
+                        Ok(_) => {},
+                        Err(e) => { debug(&format!("{}", e)); }
+                    }
+                },
+                _ => {}
+            };
     } else {
         clear();
         let path = format!("{}/{}.{}", app_config.video_path, base64::encode(&url), app_config.video_extension);
@@ -717,7 +760,7 @@ fn play_url(url: &String, app_config: &AppConfig) {
     }
 }
 
-fn play(v: &Video, app_config: &AppConfig) {
+fn play(v: &Item, app_config: &AppConfig) {
     play_url(&v.url, app_config);
 }
 
@@ -748,7 +791,7 @@ fn print_help() {
   ")
 }
 
-fn print_info(v: &Video) {
+fn print_info(v: &Item) {
     println!("\x1b[34;1m{}\x1b[0m", v.title);
     println!();
     println!("from \x1b[36m{}\x1b[0m", v.channel);
@@ -773,7 +816,7 @@ impl YoutubeSubscribtions {
 
     fn clear_and_print_videos(&mut self) {
         clear();
-        print_videos(&self.toshow)
+        print_videos(&self.app_config, &self.toshow)
     }
 
     fn move_page(&mut self, direction: i8) {
@@ -1099,7 +1142,7 @@ async fn main() {
                 filter: empty_regex_2,
                 i: 0,
                 toshow: vec![],
-                videos: Videos{channel_etags: HashMap::new(), videos: vec![]},
+                videos: Items{channel_etags: HashMap::new(), videos: vec![]},
                 app_config: load_config_fallback(),
             };
         yts.run().await;
