@@ -798,20 +798,96 @@ fn print_help() {
   ")
 }
 
-fn print_info(v: &Item) {
-    println!("\x1b[34;1m{}\x1b[0m", v.title);
-    println!();
-    println!("from \x1b[36m{}\x1b[0m", v.channel);
-    println!();
-    println!("{}", v.description);
+fn split_cols(string: &str, cols: usize) -> Vec<String> {
+    let mut chars = string.chars();
+    (0..).map(|_| chars.by_ref().take(cols).collect::<String>())
+        .take_while(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+
+}
+
+fn info_lines(v: &Item) -> Vec<String> {
+    let cols = get_cols();
+    let mut lines : Vec<String> = vec![];
+    lines.push(format!("\x1b[34;1m{}\x1b[0m", v.title));
+    lines.push("".to_string());
+    lines.push(format!("from \x1b[36m{}\x1b[0m", v.channel));
+    lines.push("".to_string());
+    v.description.split("\n").for_each( |x| split_cols(&x, cols).iter().for_each( |y| lines.push(y.to_string()) )  );
     match &v.content {
         Some(x) => {
-            println!();
-            let cols = get_cols();
-            println!("{}", html2text::from_read(x.as_bytes(), cols));
+            lines.push("".to_string());
+            html2text::from_read(x.as_bytes(), cols).split("\n").for_each( |x| lines.push(x.to_string()));
         },
         None => {}
     }
+    lines
+}
+
+fn print_lines(lines: &Vec<String>, start: usize, rows: usize) {
+    for (_, line) in lines[start..(min(lines.len(), start + rows))].iter().enumerate() {
+        println!("{}", line);
+    };
+}
+
+/* for this to work, each line should not be greater than the number of cols and there should not
+ * be any line feed */
+fn less(lines: Vec<String>) {
+    let rows = get_lines();
+    let delta = rows / 2;
+    let mut i = 0;
+    loop {
+        clear();
+        print_lines(&lines, i, rows);
+        let input = input();
+        let result;
+        {
+            let _screen = RawScreen::into_raw_mode();
+            let mut stdin = input.read_sync();
+            result = stdin.next();
+        }
+        match result {
+            None => (),
+            Some(key_event) => {
+                match key_event {
+                    InputEvent::Keyboard(event) => {
+                        match event {
+                            Char('q')| Left  => {
+                                break;
+                            },
+                            Char('g') => {
+                                i = 0;
+                            },
+                            Char('G') => {
+                                i = lines.len() - 1;
+                            },
+                            Char('k') => {
+                                if i > 0 { i = i - 1 };
+                            },
+                            Char('j') => {
+                                if i < lines.len() { i = i + 1 };
+                            },
+                            Ctrl('u') => {
+                                if i > delta { i = i - delta }
+                                else { i = 0 };
+                            },
+                            Ctrl('d') => {
+                                if i + delta < lines.len() { i = i + delta }
+                                else { i = lines.len() };
+                            },
+                            _ => {
+                            },
+                        }
+                    },
+                    _ => ()
+                }
+            }
+        }
+    };
+}
+
+fn print_info(v: &Item) {
+    less(info_lines(v));
 }
 
 fn quit() {
@@ -991,7 +1067,7 @@ impl YoutubeSubscribtions {
         if self.i < self.toshow.len() {
             clear();
             print_info(&self.toshow[self.i]);
-            self.wait_key_press_and_clear_and_print_videos()
+            self.clear_and_print_videos()
         }
     }
 
