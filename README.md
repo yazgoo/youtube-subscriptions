@@ -1,3 +1,5 @@
+[![Run on Repl.it](https://repl.it/badge/github/yazgoo/youtube-subscriptions)](https://repl.it/github/yazgoo/youtube-subscriptions)
+
 # youtube-subscriptions
 
 terminal UI for viewing youtube and/or peertube subscriptions.
