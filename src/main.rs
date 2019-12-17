@@ -342,17 +342,85 @@ fn get_atom_videos(channel: roxmltree::Node, channel_url: &String) -> Vec<Item> 
     }).collect::<Vec<Item>>()
 }
 
-fn get_channel_videos_from_contents(contents: &str, channel_url: &String) -> Vec<Item> {
-    match roxmltree::Document::parse(contents) {
-        Ok(document) =>
-            match document.descendants().find(|n| n.tag_name().name() == "channel") {
-                Some(channel) => get_atom_videos(channel, &channel_url),
-                None => get_rss_videos(document, &channel_url),
-            },
-        Err(e) => {
-            debug(&format!("failed parsing xml {}", e));
+fn parse_lbry_item(object: &serde_json::Value) -> Item {
+    /*match object {
+        serde_json::Value::Object(object) => {*/
+            Item {
+                channel: "".to_string(),
+                channel_url: "".to_string(),
+                content: None,
+                flag: None,
+                kind: ItemKind::Video,
+                published: "".to_string(),
+                description: "".to_string(),
+                title: "".to_string(),
+                url: "".to_string(),
+                thumbnail: "".to_string(),
+            }
+     /*   }
+    }*/
+}
+
+fn get_lbry_videos(document: serde_json::Value, channel_url: &String) -> Vec<Item> {
+    match document {
+        serde_json::Value::Object(object) => {
+            if object.contains_key("result") {
+                match object.get("result") {
+                    Some(serde_json::Value::Object(result)) => {
+                        if object.contains_key("items") {
+                            match object.get("result") {
+                                Some(serde_json::Value::Array(items)) => {
+                                    items.iter().map(|object| parse_lbry_item(object)).collect()
+                                }
+                                _ => {
+                                    debug("failed parsing document");
+                                    vec![]
+                                },
+
+                            }
+                        }
+                        else {
+                            vec![]
+                        }
+                    }
+                    _ =>  {
+                        debug("failed parsing document");
+                        vec![]
+                    },
+                }
+            }
+            else {
+                vec![]
+            }
+        },
+        _ =>  {
+            debug("failed parsing document");
             vec![]
         },
+    }
+}
+
+fn get_channel_videos_from_contents(contents: &str, channel_url: &String) -> Vec<Item> {
+    if channel_url.starts_with("lbry://") {
+        match serde_json::from_str(contents) {
+            Ok(document) => get_lbry_videos(document, &channel_url),
+            Err(e) =>  {
+                debug(&format!("failed parsing xml {}", e));
+                vec![]
+            },
+        }
+    } else {
+        match roxmltree::Document::parse(contents) {
+            Ok(document) =>
+                match document.descendants().find(|n| n.tag_name().name() == "channel") {
+                    Some(channel) => get_atom_videos(channel, &channel_url),
+                    None => get_rss_videos(document, &channel_url),
+                },
+            Err(e) => {
+                debug(&format!("failed parsing xml {}", e));
+                vec![]
+            },
+        }
     }
 }
 
@@ -370,7 +438,7 @@ fn get_original_channel_videos(channel_url: &String, channel_etag: &Option<&Stri
                     })
 }
 
-fn get_headers(channel_etag: Option<&String>) -> HeaderMap {
+fn get_headers(channel_etag: &Option<&String>) -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("*/*"));
     match channel_etag {
@@ -408,15 +476,26 @@ fn parse_basic_auth(channel_url: &String) -> ChannelURLWithBasicAuth {
     }
 }
 
-fn build_request(channel_url: &String, client: &reqwest::Client, channel_etag: Option<&String>) -> reqwest::RequestBuilder {
+fn build_request_normal(channel_url: &String, client: &reqwest::Client, channel_etag: Option<&String>) -> reqwest::RequestBuilder {
     let channel_url_with_basic_auth = parse_basic_auth(&channel_url);
     match channel_url_with_basic_auth.user {
         Some(user) => 
             client.get(channel_url_with_basic_auth.channel_url.as_str())
-            .headers(get_headers(channel_etag)).basic_auth(user, channel_url_with_basic_auth.password)
+            .headers(get_headers(&channel_etag)).basic_auth(user, channel_url_with_basic_auth.password)
             ,
         None => client.get(channel_url_with_basic_auth.channel_url.as_str())
-            .headers(get_headers(channel_etag)),
+            .headers(get_headers(&channel_etag)),
+    }
+}
+
+fn build_request(channel_url: &String, client: &reqwest::Client, channel_etag: Option<&String>) -> reqwest::RequestBuilder {
+    if channel_url.starts_with("lbry://") {
+        client.post("http://localhost:5279")
+            .body(format!("{{\"method\":\"claim_search\",\"params\":{{\"channel\":\"{}\",\"order_by\":[\"release_time\"]}}}}", channel_url))
+    }
+    else
+    {
+        build_request_normal(&channel_url, &client, channel_etag)
     }
 }
 
