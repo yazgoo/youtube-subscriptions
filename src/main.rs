@@ -772,7 +772,7 @@ fn play(v: &Item, app_config: &AppConfig) {
 }
 
 fn print_help() {
-    println!("\x1b[34;1m{}\x1b[0m", "youtube-subscriptions");
+    println!("\x1b[34;1m{}\x1b[0m {}", "youtube-subscriptions", env!("CARGO_PKG_VERSION"));
     println!("\x1b[36m{}\x1b[0m", "a tool to view your video subscriptions in a terminal");
     println!("
   q          quit
@@ -861,10 +861,10 @@ fn less(lines: Vec<String>) {
                             Char('G') => {
                                 i = lines.len() - 1;
                             },
-                            Char('k') => {
+                            Char('k') | Up => {
                                 if i > 0 { i = i - 1 };
                             },
-                            Char('j') => {
+                            Char('j') | Down => {
                                 if i < lines.len() { i = i + 1 };
                             },
                             Ctrl('u') => {
