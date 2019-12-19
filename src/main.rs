@@ -825,9 +825,15 @@ fn info_lines(v: &Item) -> Vec<String> {
 }
 
 fn print_lines(lines: &Vec<String>, start: usize, rows: usize) {
-    for (_, line) in lines[start..(min(lines.len(), start + rows))].iter().enumerate() {
+    let stop = min(lines.len(), start + rows);
+    for (_, line) in lines[start..stop].iter().enumerate() {
         println!("{}", line);
     };
+    if stop >= start {
+        for _ in (stop - start)..rows {
+            println!("\x1b[34;1m~\x1b[0m");
+        }
+    }
 }
 
 /* for this to work, each line should not be greater than the number of cols and there should not
