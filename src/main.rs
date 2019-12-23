@@ -300,7 +300,7 @@ fn get_atom_videos(channel: roxmltree::Node, channel_url: &String) -> Vec<Item> 
         let description = get_decendant_node!(entry, "description").text().unwrap_or("");
         let date = match DateTime::parse_from_rfc2822(video_published) {
             Ok(x) => x.to_rfc3339(),
-            Err(_) => "2002-10-02T10:00:00-05:00".to_string(),
+            Err(_) => chrono::offset::Local::now().to_rfc3339(),
         };
         let content = get_decendant_node!(entry, "encoded").text().map(|x| x.to_string());
         Item { 
