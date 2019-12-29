@@ -50,6 +50,7 @@ fn default_kind_symbols() -> HashMap<String, String> {
     symbols.insert("Audio".to_string(), "a".to_string());
     symbols.insert("Video".to_string(), "v".to_string());
     symbols.insert("Other".to_string(), "o".to_string());
+    symbols.insert("Magnet".to_string(), "m".to_string());
     symbols
 }
 
@@ -206,6 +207,7 @@ enum ItemKind {
     Video,
     Audio,
     Other,
+    Magnet,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -288,7 +290,12 @@ fn get_atom_videos(channel: roxmltree::Node, channel_url: &String) -> Vec<Item> 
     channel.descendants().filter(|n| n.tag_name().name() == "item").map(|entry| {
         let mut kind = ItemKind::Other;
         let url = get_decendant_node!(entry, "enclosure").attribute("url").map( |x| {
-            kind = ItemKind::Audio;
+            kind = if x.starts_with("magnet:") {
+                ItemKind::Magnet
+            }
+            else {
+                ItemKind::Audio
+            };
             x
         }).unwrap_or(
             get_decendant_node!(entry, "link").text().unwrap_or("")
