@@ -10,6 +10,7 @@ extern crate chrono;
 extern crate ctrlc;
 extern crate base64;
 extern crate html2text;
+extern crate percent_encoding;
 
 use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
@@ -30,6 +31,7 @@ use chrono::DateTime;
 use regex::Regex;
 use reqwest::header::{HeaderValue, HeaderMap, ETAG, IF_NONE_MATCH, ACCEPT_ENCODING};
 use std::collections::HashMap;
+use percent_encoding::percent_decode;
 
 use webbrowser;
 
@@ -260,7 +262,9 @@ fn get_rss_videos(document: roxmltree::Document, channel_url: &String) -> Vec<It
         let url = get_decendant_node!(entry, "link").attribute("href").unwrap_or("");
         let video_title = get_decendant_node!(entry, "title").text().unwrap_or("");
         let video_published = get_decendant_node!(entry, "published").text().unwrap_or(
-            get_decendant_node!(entry, "updated").text().unwrap_or("")
+            get_decendant_node!(entry, "updated").text().unwrap_or(
+                    get_decendant_node!(entry, "issued").text().unwrap_or("")
+                )
             );
         let thumbnail = get_decendant_node!(entry, "thumbnail").attribute("url").unwrap_or("");
         if thumbnail != "".to_string() { kind = ItemKind::Video } 
@@ -369,10 +373,43 @@ fn get_headers(channel_etag: Option<&String>) -> HeaderMap {
     headers
 }
 
+#[derive(Debug)]
+struct ChannelURLWithBasicAuth {
+    channel_url: String,
+    password: Option<String>,
+    user: Option<String>,
+}
+
+fn parse_basic_auth(channel_url: &String) -> ChannelURLWithBasicAuth {
+    match Regex::new(r"^(https://)([^:/]*):([^@/]*)@(.*)$") {
+        Ok(re) => 
+            match re.captures(channel_url) {
+                Some(caps) => ChannelURLWithBasicAuth { 
+                    channel_url: (format!("{}{}", caps[1].to_string(), caps[4].to_string())).to_string(), 
+                    password: Some(percent_decode(caps[3].as_bytes()).decode_utf8_lossy().to_string()),
+                    user: Some(percent_decode(caps[2].as_bytes()).decode_utf8_lossy().to_string()) },
+                None => ChannelURLWithBasicAuth {
+                    channel_url: channel_url.to_string(), password: None, user: None },
+            }
+        Err(_) => ChannelURLWithBasicAuth { channel_url: channel_url.to_string(), password: None, user: None },
+    }
+}
+
+fn build_request(channel_url: &String, client: &reqwest::Client, channel_etag: Option<&String>) -> reqwest::RequestBuilder {
+    let channel_url_with_basic_auth = parse_basic_auth(&channel_url);
+    match channel_url_with_basic_auth.user {
+        Some(user) => 
+            client.get(channel_url_with_basic_auth.channel_url.as_str())
+            .headers(get_headers(channel_etag)).basic_auth(user, channel_url_with_basic_auth.password)
+            ,
+        None => client.get(channel_url_with_basic_auth.channel_url.as_str())
+            .headers(get_headers(channel_etag)),
+    }
+}
+
 async fn get_channel_videos(client: &reqwest::Client, channel_url: String, channel_etag: Option<&String>, original_videos: &Items) -> Option<ChanelItems> {
     for _i in 0..2 {
-        let request = client.get(channel_url.as_str())
-            .headers(get_headers(channel_etag));
+        let request = build_request(&channel_url, &client, channel_etag);
         let wrapped_response = request.send().await;
         match wrapped_response {
             Ok(response) => {
