@@ -1,6 +1,5 @@
 extern crate dirs;
 extern crate reqwest;
-extern crate terminal_size;
 extern crate crossterm_input;
 extern crate crossterm;
 extern crate serde;
@@ -21,7 +20,6 @@ use std::path::Path;
 use std::io::{Read, Write};
 use std::io::Error;
 use std::io::ErrorKind::NotFound;
-use terminal_size::{Width, Height, terminal_size};
 use std::cmp::min;
 use std::process::{Command, Stdio};
 use crossterm_input::{input, RawScreen, InputEvent, MouseEvent, MouseButton};
@@ -33,7 +31,7 @@ use reqwest::header::{HeaderValue, HeaderMap, ETAG, IF_NONE_MATCH, ACCEPT_ENCODI
 use std::collections::HashMap;
 use percent_encoding::percent_decode;
 
-use webbrowser;
+// use webbrowser;
 
 fn default_mpv_mode() -> bool {
     true
@@ -144,7 +142,7 @@ fn subscriptions_url() -> &'static str {
 }
 
 fn download_subscriptions() {
-    let _res = webbrowser::open(&subscriptions_url());
+    //let _res = webbrowser::open(&subscriptions_url());
     debug(&format!("please save file to ~/{}", subscription_manager_relative_path()));
 }
 
@@ -561,8 +559,8 @@ async fn load(reload: bool, app_config: &AppConfig, original_videos: &Items) -> 
 
 
 fn get_lines() -> usize {
-    let size = terminal_size();
-    if let Some((Width(_), Height(h))) = size {
+    let size = crossterm::terminal::size();
+    if let Ok((_, h)) = size {
         (h - 1) as usize
     } else {
         20
@@ -570,8 +568,8 @@ fn get_lines() -> usize {
 }
 
 fn get_cols() -> usize {
-    let size = terminal_size();
-    if let Some((Width(w), Height(_))) = size {
+    let size = crossterm::terminal::size();
+    if let Ok((w, _)) = size {
         w as usize
     } else {
         20
@@ -1015,7 +1013,7 @@ impl YoutubeSubscribtions {
 
     fn display_current_thumbnail(&mut self) {
         if self.i < self.toshow.len() {
-            let _res = webbrowser::open(&self.toshow[self.i].thumbnail);
+            //let _res = webbrowser::open(&self.toshow[self.i].thumbnail);
             self.clear_and_print_videos();
         }
     }
@@ -1024,7 +1022,7 @@ impl YoutubeSubscribtions {
         if self.i < self.toshow.len() {
             let url = &self.toshow[self.i].url;
             debug(&format!("opening {}", &url));
-            let _res = webbrowser::open(&url);
+            // let _res = webbrowser::open(&url);
             self.flag(&Some(Flag::Read));
             self.clear_and_print_videos();
         }
