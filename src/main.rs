@@ -31,7 +31,7 @@ use reqwest::header::{HeaderValue, HeaderMap, ETAG, IF_NONE_MATCH, ACCEPT_ENCODI
 use std::collections::HashMap;
 use percent_encoding::percent_decode;
 
-// use webbrowser;
+use webbrowser;
 
 fn default_mpv_mode() -> bool {
     true
@@ -142,7 +142,7 @@ fn subscriptions_url() -> &'static str {
 }
 
 fn download_subscriptions() {
-    //let _res = webbrowser::open(&subscriptions_url());
+    let _res = webbrowser::open(&subscriptions_url());
     debug(&format!("please save file to ~/{}", subscription_manager_relative_path()));
 }
 
@@ -1013,7 +1013,7 @@ impl YoutubeSubscribtions {
 
     fn display_current_thumbnail(&mut self) {
         if self.i < self.toshow.len() {
-            //let _res = webbrowser::open(&self.toshow[self.i].thumbnail);
+            let _res = webbrowser::open(&self.toshow[self.i].thumbnail);
             self.clear_and_print_videos();
         }
     }
@@ -1022,7 +1022,7 @@ impl YoutubeSubscribtions {
         if self.i < self.toshow.len() {
             let url = &self.toshow[self.i].url;
             debug(&format!("opening {}", &url));
-            // let _res = webbrowser::open(&url);
+            let _res = webbrowser::open(&url);
             self.flag(&Some(Flag::Read));
             self.clear_and_print_videos();
         }
