@@ -1,6 +1,5 @@
 extern crate dirs;
 extern crate reqwest;
-extern crate terminal_size;
 extern crate crossterm_input;
 extern crate crossterm;
 extern crate serde;
@@ -21,7 +20,6 @@ use std::path::Path;
 use std::io::{Read, Write};
 use std::io::Error;
 use std::io::ErrorKind::NotFound;
-use terminal_size::{Width, Height, terminal_size};
 use std::cmp::min;
 use std::process::{Command, Stdio};
 use crossterm_input::{input, RawScreen, InputEvent, MouseEvent, MouseButton};
@@ -561,8 +559,8 @@ async fn load(reload: bool, app_config: &AppConfig, original_videos: &Items) -> 
 
 
 fn get_lines() -> usize {
-    let size = terminal_size();
-    if let Some((Width(_), Height(h))) = size {
+    let size = crossterm::terminal::size();
+    if let Ok((_, h)) = size {
         (h - 1) as usize
     } else {
         20
@@ -570,8 +568,8 @@ fn get_lines() -> usize {
 }
 
 fn get_cols() -> usize {
-    let size = terminal_size();
-    if let Some((Width(w), Height(_))) = size {
+    let size = crossterm::terminal::size();
+    if let Ok((w, _)) = size {
         w as usize
     } else {
         20
