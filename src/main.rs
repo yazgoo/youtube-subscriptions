@@ -12,8 +12,6 @@ extern crate html2text;
 extern crate percent_encoding;
 extern crate blockish;
 
-use image::GenericImageView;
-use image::imageops::FilterType;
 use std::io;
 use std::fs::File;
 use std::time::Instant;
@@ -33,7 +31,7 @@ use regex::Regex;
 use reqwest::header::{HeaderValue, HeaderMap, ETAG, IF_NONE_MATCH, ACCEPT_ENCODING};
 use std::collections::HashMap;
 use percent_encoding::percent_decode;
-use blockish::render;
+use blockish::render_image;
 
 use webbrowser;
 
@@ -1043,25 +1041,8 @@ impl YoutubeSubscribtions {
             let mut out = File::create(&path)?;
             let bytes = resp.bytes().await?;
             out.write_all(&bytes[..])?;
-            match image::open(&path) {
-                Ok(img) => {
-                    let width = get_cols() as u32 * 8;
-                    let height = img.height() * width / img.width();
-                    let subimg  = img.resize(width, height, FilterType::Nearest);
-                    let raw: Vec<u8> = subimg.to_rgb().into_raw();
-                    let raw_slice = raw.as_slice();
-                    let width = subimg.width();
-                    let height = subimg.height();
-                    clear();
-                    render(width, height, &|x, y| {
-                        let start = ((y * width + x)*3) as usize;
-                        (raw_slice[start], raw_slice[start + 1], raw_slice[start + 2])
-                    });
-                    pause();
-                    self.clear_and_print_videos();
-                },
-                Err(_) => {}
-            }
+            let width = get_cols() as u32 * 8;
+            render_image(&path, width);
         }
         Ok(())
     }
