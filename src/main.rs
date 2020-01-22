@@ -10,15 +10,18 @@ extern crate ctrlc;
 extern crate base64;
 extern crate html2text;
 extern crate percent_encoding;
+extern crate blockish;
 
+use image::GenericImageView;
+use image::imageops::FilterType;
+use std::io;
+use std::fs::File;
 use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
 use serde::{Serialize, Deserialize};
 use std::fs;
-use std::io;
 use std::path::Path;
 use std::io::{Read, Write};
-use std::io::Error;
 use std::io::ErrorKind::NotFound;
 use std::cmp::min;
 use std::process::{Command, Stdio};
@@ -30,8 +33,28 @@ use regex::Regex;
 use reqwest::header::{HeaderValue, HeaderMap, ETAG, IF_NONE_MATCH, ACCEPT_ENCODING};
 use std::collections::HashMap;
 use percent_encoding::percent_decode;
+use blockish::render;
 
 use webbrowser;
+
+#[derive(Debug)]
+enum CustomError {
+    Io(std::io::Error),
+    Reqwest(reqwest::Error),
+}
+
+impl From<std::io::Error> for CustomError {
+    fn from(err: std::io::Error) -> CustomError {
+        CustomError::Io(err)
+    }
+}
+
+impl From<reqwest::Error> for CustomError {
+    fn from(err: reqwest::Error) -> CustomError {
+        CustomError::Reqwest(err)
+    }
+}
+
 
 fn default_mpv_mode() -> bool {
     true
@@ -99,7 +122,7 @@ impl Default for AppConfig {
     }
 }
 
-fn load_config() -> Result<AppConfig, Error> {
+fn load_config() -> Result<AppConfig, std::io::Error> {
     match dirs::home_dir() {
         Some(home) => {
             match home.to_str() {
@@ -150,7 +173,7 @@ fn subscription_manager_relative_path() -> &'static str {
     ".config/youtube-subscriptions/subscription_manager"
 }
 
-fn get_subscriptions_xml() -> Result<String, Error> {
+fn get_subscriptions_xml() -> Result<String, std::io::Error> {
     match dirs::home_dir() {
         Some(home) =>
             match home.to_str() {
@@ -1011,11 +1034,36 @@ impl YoutubeSubscribtions {
         }
     }
 
-    fn display_current_thumbnail(&mut self) {
+
+    async fn display_current_thumbnail(&mut self) -> Result<(), CustomError> {
         if self.i < self.toshow.len() {
-            let _res = webbrowser::open(&self.toshow[self.i].thumbnail);
-            self.clear_and_print_videos();
+            let url = &self.toshow[self.i].thumbnail;
+            let resp = reqwest::get(url).await?;
+            let path = format!("{}/{}.{}", self.app_config.video_path, base64::encode(&url), ".jpg");
+            let mut out = File::create(&path)?;
+            let bytes = resp.bytes().await?;
+            out.write_all(&bytes[..])?;
+            match image::open(&path) {
+                Ok(img) => {
+                    let width = get_cols() as u32 * 8;
+                    let height = img.height() * width / img.width();
+                    let subimg  = img.resize(width, height, FilterType::Nearest);
+                    let raw: Vec<u8> = subimg.to_rgb().into_raw();
+                    let raw_slice = raw.as_slice();
+                    let width = subimg.width();
+                    let height = subimg.height();
+                    clear();
+                    render(width, height, &|x, y| {
+                        let start = ((y * width + x)*3) as usize;
+                        (raw_slice[start], raw_slice[start + 1], raw_slice[start + 2])
+                    });
+                    pause();
+                    self.clear_and_print_videos();
+                },
+                Err(_) => {}
+            }
         }
+        Ok(())
     }
 
     fn open_current(&mut self) {
@@ -1217,7 +1265,10 @@ impl YoutubeSubscribtions {
                                 Char('h') | Char('?') => self.help(),
                                 Char('i') | Right => self.info(),
                                 Char('t') => self.flag_unflag(),
-                                Char('T') => self.display_current_thumbnail(),
+                                Char('T') => {match self.display_current_thumbnail().await {
+                                    Ok(_) => {},
+                                    Err(e) => debug(&format!("error: {:?}", e))
+                                }},
                                 Char('p') | Char('\n') => self.play_current(),
                                 Char('o') => self.open_current(),
                                 Char('/') => self.search(),
