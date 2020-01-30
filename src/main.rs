@@ -11,6 +11,7 @@ extern crate base64;
 extern crate html2text;
 extern crate percent_encoding;
 extern crate blockish;
+extern crate unicode_segmentation;
 
 use std::io;
 use std::fs::File;
@@ -32,6 +33,8 @@ use reqwest::header::{HeaderValue, HeaderMap, ETAG, IF_NONE_MATCH, ACCEPT_ENCODI
 use std::collections::HashMap;
 use percent_encoding::percent_decode;
 use blockish::render_image;
+use unicode_segmentation::UnicodeSegmentation;
+
 
 use webbrowser;
 
@@ -707,7 +710,7 @@ fn print_videos(app_config: &AppConfig, toshow: &[Item]) {
             published_short, channel_short, whitespaces,
             video.title
             );
-        println!("{}", s.chars().take(min(s.chars().count(), cols-4+9+9+1)).collect::<String>());
+        println!("{}", s.chars().take(min(s.graphemes(true).count(), cols-4+9+4+1)).collect::<String>());
     }
 }
 
