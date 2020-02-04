@@ -13,13 +13,14 @@ extern crate percent_encoding;
 extern crate blockish;
 
 use std::io;
+use utf8::BufReadDecoder;
 use std::fs::File;
 use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
 use serde::{Serialize, Deserialize};
 use std::fs;
 use std::path::Path;
-use std::io::{Read, Write};
+use std::io::{Read, Write, BufReader};
 use std::io::ErrorKind::NotFound;
 use std::cmp::min;
 use std::process::{Command, Stdio};
@@ -723,15 +724,19 @@ fn read_command_output(command: &mut Command, binary: &str) {
                 let stdout_option = child.stdout.take();
                 match stdout_option {
                     Some(stdout) => 
-                        for byte_result in stdout.bytes() {
-                            match byte_result {
-                                Ok(byte) => {
-                                    print!("{}", byte as char);
-                                    flush_stdout();
+                    {
+                        let mut decoder = BufReadDecoder::new(BufReader::new(stdout));
+                        loop {
+                            let read_result = decoder.next_strict();
+                            match read_result {
+                                Some(Ok(s)) => {
+                                        print!("{}", s);
                                 },
-                                Err(_) => { }
+                                Some(Err(_)) => { }
+                                None => { break; }
                             }
-                        },
+                        }
+                    }
                     None => debug("no stdout")
                 }
                 let stderr_option = child.stderr.take();
