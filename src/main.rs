@@ -11,6 +11,7 @@ extern crate base64;
 extern crate html2text;
 extern crate percent_encoding;
 extern crate blockish;
+extern crate blockish_player;
 
 use std::io;
 use utf8::BufReadDecoder;
@@ -88,6 +89,7 @@ struct AppConfig {
     video_extension: String,
     #[serde(default = "default_kind_symbols")]
     kind_symbols: HashMap<String, String>,
+    blockish_player: Option<String>,
     players: Vec<Vec<String>>,
     channel_ids: Vec<String>,
     #[serde(default = "default_channel_urls")]
@@ -106,6 +108,7 @@ impl Default for AppConfig {
             cache_path: "__HOME/.cache/yts/yts.json".to_string(),
             youtubedl_format: "[height <=? 360][ext = mp4]".to_string(),
             video_extension: "mp4".to_string(),
+            blockish_player: None,
             players: vec![
                 vec!["/usr/bin/omxplayer".to_string(), "-o".to_string(), "local".to_string()],
                 vec!["/Applications/VLC.app/Contents/MacOS/VLC".to_string(), "--play-and-exit".to_string(), "-f".to_string()],
@@ -777,7 +780,7 @@ fn read_command_output(command: &mut Command, binary: &str) {
         }
 }
 
-fn play_video(path: &str, app_config: &AppConfig) {
+fn play_video_usual(path: &str, app_config: &AppConfig) {
     for player in &app_config.players {
         if fs::metadata(&player[0]).is_ok() {
             let mut child1 = Command::new(&player[0]);
@@ -786,6 +789,23 @@ fn play_video(path: &str, app_config: &AppConfig) {
             } 
             read_command_output(child1.arg(path), &player[0]);
             return
+        }
+    }
+}
+
+fn play_video(path: &str, app_config: &AppConfig) {
+    match &app_config.blockish_player {
+        None => play_video_usual(&path, &app_config),
+        Some(player) => {
+            match blockish_player::video_command(player, &path.to_string()) {
+                Ok(mut command) => {
+                    read_command_output(&mut command, &"blockish_player".to_string());
+                }
+                Err(e) => {
+                    debug(&format!("error: {:?}", e));
+                    play_video_usual(&path, &app_config);
+                }
+            };
         }
     }
 }
