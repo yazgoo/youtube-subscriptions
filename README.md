@@ -69,6 +69,7 @@ example:
 | ------           | -----------                                                                                         | -------------
 | video_path       | directory where videos will be stored                                                               | `/tmp`
 | cache_path       | file path where video list will be stored                                                           | `/tmp/yts.json`
+| blockish_player  | [blockish player](https://github.com/yazgoo/blockish-player) to use (supersedes players)            | None
 | players          | list of players command for videos in order of priority                                             |
 | youtubedl_format | see [youtube-dl doc](https://github.com/ytdl-org/youtube-dl/blob/master/README.md#format-selection) | `[height <=? 360][ext = mp4]`
 | video_extension  | youtube-dl video extension as per format                                                            | `mp4`
