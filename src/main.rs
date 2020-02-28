@@ -82,6 +82,7 @@ struct AppConfig {
     channel_urls: Vec<String>,
     mpv_mode: bool,
     mpv_path: String,
+    fs: bool,
 }
 
 impl Default for AppConfig {
@@ -104,6 +105,7 @@ impl Default for AppConfig {
             channel_urls: vec![],
             mpv_mode: true,
             mpv_path: "/usr/bin/mpv".to_string(),
+            fs: true,
         }
     }
 }
@@ -811,7 +813,7 @@ fn play_url(url: &String, kind: &ItemKind, app_config: &AppConfig) {
         let message = format!("playing {} with mpv...", url);
         debug(&message);
             match Command::new(&app_config.mpv_path)
-            .arg("-fs")
+            .arg(if app_config.fs { "-fs" } else { "" })
             .arg("-really-quiet")
             .arg("--ytdl-format")
             .arg(&app_config.youtubedl_format)
