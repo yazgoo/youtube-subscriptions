@@ -83,6 +83,7 @@ struct AppConfig {
     mpv_mode: bool,
     mpv_path: String,
     fs: bool,
+    open_magnet: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -106,6 +107,7 @@ impl Default for AppConfig {
             mpv_mode: true,
             mpv_path: "/usr/bin/mpv".to_string(),
             fs: true,
+            open_magnet: None,
         }
     }
 }
@@ -808,6 +810,15 @@ fn download_video(path: &str, id: &str, app_config: &AppConfig) {
     }
 }
 
+fn open_magnet(url: &str, app_config: &AppConfig) {
+    match &app_config.open_magnet {
+        Some(open_magnet) =>
+            read_command_output(Command::new(open_magnet)
+                .arg(&url), &open_magnet),
+        None => {},
+    }
+}
+
 fn play_url(url: &String, kind: &ItemKind, app_config: &AppConfig) {
     if app_config.mpv_mode && fs::metadata(&app_config.mpv_path).is_ok() {
         let message = format!("playing {} with mpv...", url);
@@ -831,6 +842,9 @@ fn play_url(url: &String, kind: &ItemKind, app_config: &AppConfig) {
         match kind {
             ItemKind::Audio => {
                 play_video(&url, app_config);
+            },
+            ItemKind::Magnet => {
+                open_magnet(&url, app_config);
             },
             _ => {
                 let path = format!("{}/{}.{}", app_config.video_path, base64::encode(&url), app_config.video_extension);
