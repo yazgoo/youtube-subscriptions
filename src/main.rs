@@ -55,17 +55,8 @@ impl From<reqwest::Error> for CustomError {
     }
 }
 
-
-fn default_mpv_mode() -> bool {
-    true
-}
-
 fn default_content() -> Option<String> {
     None
-}
-
-fn default_channel_urls() -> Vec<String> {
-    vec![]
 }
 
 fn default_kind_symbols() -> HashMap<String, String> {
@@ -77,27 +68,21 @@ fn default_kind_symbols() -> HashMap<String, String> {
     symbols
 }
 
-fn default_mpv_path() -> String {
-    "/usr/bin/mpv".to_string()
-}
-
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(default)]
 struct AppConfig {
     video_path: String,
     cache_path: String,
     youtubedl_format: String,
     video_extension: String,
-    #[serde(default = "default_kind_symbols")]
     kind_symbols: HashMap<String, String>,
     blockish_player: Option<String>,
     players: Vec<Vec<String>>,
     channel_ids: Vec<String>,
-    #[serde(default = "default_channel_urls")]
     channel_urls: Vec<String>,
-    #[serde(default = "default_mpv_mode")]
     mpv_mode: bool,
-    #[serde(default = "default_mpv_path")]
     mpv_path: String,
+    fs: bool,
 }
 
 impl Default for AppConfig {
@@ -117,9 +102,10 @@ impl Default for AppConfig {
                 vec!["/usr/bin/mplayer".to_string(), "-really-quiet".to_string(), "-fs".to_string()],
             ],
             channel_ids: vec![],
-            channel_urls: default_channel_urls(),
-            mpv_mode: default_mpv_mode(),
-            mpv_path: default_mpv_path(),
+            channel_urls: vec![],
+            mpv_mode: true,
+            mpv_path: "/usr/bin/mpv".to_string(),
+            fs: true,
         }
     }
 }
@@ -827,7 +813,7 @@ fn play_url(url: &String, kind: &ItemKind, app_config: &AppConfig) {
         let message = format!("playing {} with mpv...", url);
         debug(&message);
             match Command::new(&app_config.mpv_path)
-            .arg("-fs")
+            .arg(if app_config.fs { "-fs" } else { "" })
             .arg("-really-quiet")
             .arg("--ytdl-format")
             .arg(&app_config.youtubedl_format)
