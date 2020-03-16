@@ -78,6 +78,7 @@ example:
 | channel_urls     | list of additional channel urls which will be also fetched (can be used for peertube)                                           | `[]`
 | mpv_mode         | try and start mpv to play the youtubee video first                                                  | `true`
 | mpv_path         | path to mpv binary (will be use if mpv_mode is true)                                                | `/usr/bin/mpv`
+| open_magnet      | tool to use to open magnet links (e.g. transmission-remote-cli                                      | None
 
 `__HOME` will be substituted with the home path.
 

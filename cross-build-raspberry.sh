@@ -6,7 +6,7 @@ fi
 mkdir -p target/release
 sysroot=/home/cross/pi-tools/arm-bcm2708/arm-rpi-4.9.3-linux-gnueabihf/arm-linux-gnueabihf/sysroot/ 
 docker run --entrypoint sh \
-  yazgoo/rust-raspberry:1.39.0 -c \
+  yazgoo/rust-raspberry:1.41.1 -c \
   "set -x && \
   mkdir -p /home/cross/project/src && \
   echo '$(cat src/main.rs|base64)'|base64 -d > /home/cross/project/src/main.rs && \
