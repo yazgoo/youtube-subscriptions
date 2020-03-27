@@ -84,6 +84,7 @@ struct AppConfig {
     mpv_path: String,
     fs: bool,
     open_magnet: Option<String>,
+    sort: String,
 }
 
 impl Default for AppConfig {
@@ -108,6 +109,7 @@ impl Default for AppConfig {
             mpv_path: "/usr/bin/mpv".to_string(),
             fs: true,
             open_magnet: None,
+            sort: "desc".to_string(),
         }
     }
 }
@@ -484,14 +486,14 @@ async fn get_videos(xml: String, additional_channel_ids: &[String], additional_c
     }
 }
 
-fn to_show_videos(videos: &mut Vec<Item>, start: usize, end: usize, filter: &Regex) -> Vec<Item> {
+fn to_show_videos(app_config: &AppConfig, videos: &mut Vec<Item>, start: usize, end: usize, filter: &Regex) -> Vec<Item> {
     videos.sort_by(|a, b| b.published.cmp(&a.published));
     let filtered_videos = videos.iter().filter(|video| 
         filter.is_match(&video.title) || filter.is_match(&video.channel) || filter.is_match(&format!("{:?}", video.kind))
     ).cloned().collect::<Vec<Item>>();
     let new_end = std::cmp::min(end, filtered_videos.len());
     let mut result = filtered_videos[start..new_end].to_vec();
-    result.reverse();
+    if app_config.sort == "desc" { result.reverse() }
     result
 }
 
@@ -1014,7 +1016,7 @@ impl YoutubeSubscribtions {
                 self.start -= self.n;
             }
         }
-        self.toshow = to_show_videos(&mut self.videos.videos, self.start, self.start + self.n, &self.filter);
+        self.toshow = to_show_videos(&self.app_config, &mut self.videos.videos, self.start, self.start + self.n, &self.filter);
         self.i = 0;
         self.clear_and_print_videos()
     }
@@ -1046,7 +1048,7 @@ impl YoutubeSubscribtions {
 
     fn first_page(&mut self) {
         self.n = get_lines();
-        self.toshow = to_show_videos(&mut self.videos.videos, self.start, self.n, &self.filter);
+        self.toshow = to_show_videos(&self.app_config, &mut self.videos.videos, self.start, self.n, &self.filter);
     }
 
     fn play_current(&mut self) {
