@@ -828,7 +828,7 @@ fn play_url(url: &String, kind: &ItemKind, app_config: &AppConfig) {
             match Command::new(&app_config.mpv_path)
             .arg(if app_config.fs { "-fs" } else { "" })
             .arg("-really-quiet")
-            .arg("--ytdl-format")
+            .arg("--ytdl-format=")
             .arg(&app_config.youtubedl_format)
             .arg(&url).spawn() {
                 Ok(mut child) => {
