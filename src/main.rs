@@ -116,38 +116,68 @@ impl Default for AppConfig {
 
 fn load_config() -> Result<AppConfig, std::io::Error> {
     match dirs::home_dir() {
-        Some(home) => {
-            match home.to_str() {
-                Some(h) => {
-                    let path = format!("{}/.config/youtube-subscriptions/config.json",
-                                       h);
-                    let s = fs::read_to_string(path)?;
-                    let mut _res = serde_json::from_str::<AppConfig>(s.as_str())?;
-                    _res.video_path = _res.video_path.replace("__HOME", &h);
-                    fs::create_dir_all(&_res.video_path)?;
-                    _res.cache_path = _res.cache_path.replace("__HOME", &h);
-                    match Path::new(&_res.cache_path).parent() {
-                        Some(dirname) => fs::create_dir_all(&dirname)?,
-                        None => {
-                            debug(&format!("failed to find dirname of {}", &_res.cache_path));
-                        }
+        Some(home) => match home.to_str() {
+            Some(h) => {
+                let path = format!("{}/.config/youtube-subscriptions/config.json", h);
+                let s = fs::read_to_string(path)?;
+                let mut _res = serde_json::from_str::<AppConfig>(s.as_str())?;
+                _res.video_path = _res.video_path.replace("__HOME", &h);
+                fs::create_dir_all(&_res.video_path)?;
+                _res.cache_path = _res.cache_path.replace("__HOME", &h);
+                match Path::new(&_res.cache_path).parent() {
+                    Some(dirname) => fs::create_dir_all(&dirname)?,
+                    None => {
+                        debug(&format!("failed to find dirname of {}", &_res.cache_path));
                     }
-                    Ok(_res)
-                },
-                None => Ok(AppConfig { ..Default::default() })
+                }
+                Ok(_res)
             }
+            None => Ok(AppConfig {
+                ..Default::default()
+            }),
         },
-        None =>
-            Ok(AppConfig { ..Default::default() })
+        None => Ok(AppConfig {
+            ..Default::default()
+        }),
+    }
+}
+
+fn create_config() -> AppConfig {
+    match dirs::home_dir() {
+        Some(home) => match home.to_str() {
+            Some(h) => {
+                let config_path = format!("{}/.config/youtube-subscriptions/", h);
+                let config_file_path = format!("{}/.config/youtube-subscriptions/config.json", h);
+                let cache_path = format!("{}/.cache/yts/", h);
+                let cache_file_path = format!("{}/.cache/yts/yts.json", h);
+                fs::create_dir_all(&config_path);
+                fs::create_dir_all(&cache_path);
+                let mut file = File::create(config_file_path).expect("config file created");
+                let _cache_file = File::create(cache_file_path).expect("cache file created");
+                let default_config = AppConfig {
+                    ..Default::default()
+                };
+                let config_as_string = serde_json::to_string(&default_config).unwrap();
+                file.write_all(config_as_string.as_bytes());
+                return AppConfig {
+                    ..Default::default()
+                };
+            }
+            None => AppConfig {
+                ..Default::default()
+            },
+        },
+        None => AppConfig {
+            ..Default::default()
+        },
     }
 }
 
 fn load_config_fallback() -> AppConfig {
     match load_config() {
         Ok(res) => res,
-        Err(e) => {
-            debug(&format!("load_config err: {}", e));
-            AppConfig { ..Default::default() }
+        Err(_e) => {
+            create_config()
         }
     }
 }
@@ -498,14 +528,14 @@ fn to_show_videos(app_config: &AppConfig, videos: &mut Vec<Item>, start: usize, 
 }
 
 fn save_videos(app_config: &AppConfig, videos: &Items) {
+    let home = dirs::home_dir().expect("home dir");
     let path = app_config.cache_path.as_str();
+    let proper_path = path.replace("__HOME", home.to_str().expect("home as str"));
     match serde_json::to_string(&videos) {
-        Ok(serialized) => {
-            match fs::write(&path, serialized) {
-                Ok(_) => {},
-                Err(e) => {
-                    debug(&format!("failed writing {} {}", &path, e));
-                }
+        Ok(serialized) => match fs::write(&proper_path, serialized) {
+            Ok(_) => {}
+            Err(e) => {
+                debug(&format!("failed writing {} {}", &proper_path, e));
             }
         },
         Err(e) => {
