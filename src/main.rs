@@ -119,17 +119,31 @@ fn load_config() -> Result<AppConfig, std::io::Error> {
         Some(home) => match home.to_str() {
             Some(h) => {
                 let path = format!("{}/.config/youtube-subscriptions/config.json", h);
-                let s = fs::read_to_string(path)?;
-                let mut _res = serde_json::from_str::<AppConfig>(s.as_str())?;
+
+                let mut _res = match fs::read_to_string(path) {
+                  Ok(s) => serde_json::from_str::<AppConfig>(s.as_str())?,
+                  _ => {
+                    let config_path = format!("{}/.config/youtube-subscriptions/", h);
+                    let config_file_path = format!("{}/.config/youtube-subscriptions/config.json", h);
+                    fs::create_dir_all(&config_path)?;
+                    let mut file = File::create(config_file_path)?;
+                    let default_config = AppConfig {
+                        ..Default::default()
+                    };
+                    let config_as_string = serde_json::to_string(&default_config)?;
+                    file.write_all(config_as_string.as_bytes())?;
+
+                    AppConfig {
+                        ..Default::default()
+                    }
+                  }
+                };
+
                 _res.video_path = _res.video_path.replace("__HOME", &h);
                 fs::create_dir_all(&_res.video_path)?;
-                _res.cache_path = _res.cache_path.replace("__HOME", &h);
-                match Path::new(&_res.cache_path).parent() {
-                    Some(dirname) => fs::create_dir_all(&dirname)?,
-                    None => {
-                        debug(&format!("failed to find dirname of {}", &_res.cache_path));
-                    }
-                }
+
+                let cache_path = format!("{}/.cache/yts/", h);
+                fs::create_dir_all(&cache_path)?;
                 Ok(_res)
             }
             None => Ok(AppConfig {
@@ -142,53 +156,16 @@ fn load_config() -> Result<AppConfig, std::io::Error> {
     }
 }
 
-fn create_config() -> AppConfig {
-    match dirs::home_dir() {
-        Some(home) => match home.to_str() {
-            Some(h) => {
-                let config_path = format!("{}/.config/youtube-subscriptions/", h);
-                let config_file_path = format!("{}/.config/youtube-subscriptions/config.json", h);
-                let cache_path = format!("{}/.cache/yts/", h);
-                let cache_file_path = format!("{}/.cache/yts/yts.json", h);
-                fs::create_dir_all(&config_path);
-                fs::create_dir_all(&cache_path);
-                let mut file = File::create(config_file_path).expect("config file created");
-                let _cache_file = File::create(cache_file_path).expect("cache file created");
-                let default_config = AppConfig {
-                    ..Default::default()
-                };
-                let config_as_string = serde_json::to_string(&default_config).unwrap();
-                file.write_all(config_as_string.as_bytes());
-                return AppConfig {
-                    ..Default::default()
-                };
-            }
-            None => AppConfig {
-                ..Default::default()
-            },
-        },
-        None => AppConfig {
-            ..Default::default()
-        },
-    }
-}
-
-fn load_config_fallback() -> AppConfig {
-    match load_config() {
-        Ok(res) => res,
-        Err(_e) => {
-            create_config()
-        }
-    }
-}
-
 fn subscriptions_url() -> &'static str {
     "https://www.youtube.com/subscription_manager?action_takeout=1"
 }
 
 fn download_subscriptions() {
     let _res = webbrowser::open(&subscriptions_url());
-    debug(&format!("please save file to ~/{}", subscription_manager_relative_path()));
+    debug(&format!(
+        "please save file to ~/{}",
+        subscription_manager_relative_path()
+    ));
 }
 
 fn subscription_manager_relative_path() -> &'static str {
@@ -1263,6 +1240,9 @@ impl YoutubeSubscribtions {
         self.clear_and_print_videos();
         hide_cursor();
         loop {
+            if self.videos.videos.len() == 0 {
+              self.help();
+            }
             self.handle_resize();
             print_selector(self.i);
             let input = input();
@@ -1355,20 +1335,21 @@ async fn main() {
     match Regex::new("") {
         Ok(empty_regex) => {
             let empty_regex_2 = empty_regex.clone();
-            let mut yts = YoutubeSubscribtions{
+            let mut yts = YoutubeSubscribtions {
                 n: 0,
                 start: 0,
                 search: empty_regex,
                 filter: empty_regex_2,
                 i: 0,
                 toshow: vec![],
-                videos: Items{channel_etags: HashMap::new(), videos: vec![]},
-                app_config: load_config_fallback(),
+                videos: Items {
+                    channel_etags: HashMap::new(),
+                    videos: vec![],
+                },
+                app_config: load_config().expect("loaded config"),
             };
-        yts.run().await;
-        },
-        Err(_) => {
-            println!("failed creating regex")
+            yts.run().await;
         }
+        Err(_) => println!("failed creating regex"),
     }
 }
