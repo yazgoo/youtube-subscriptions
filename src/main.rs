@@ -20,7 +20,6 @@ use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
 use serde::{Serialize, Deserialize};
 use std::fs;
-use std::path::Path;
 use std::io::{Read, Write, BufReader};
 use std::io::ErrorKind::NotFound;
 use std::cmp::min;
@@ -34,8 +33,6 @@ use reqwest::header::{HeaderValue, HeaderMap, ETAG, IF_NONE_MATCH, ACCEPT_ENCODI
 use std::collections::HashMap;
 use percent_encoding::percent_decode;
 use blockish::render_image;
-
-use webbrowser;
 
 #[derive(Debug)]
 enum CustomError {
@@ -218,7 +215,7 @@ fn default_flag() -> Option<Flag> {
 }
 
 fn kind_symbol(app_config: &AppConfig, kind: &ItemKind) -> String {
-    match app_config.kind_symbols.get(&format!("{:?}", kind).to_string()) {
+    match app_config.kind_symbols.get(&format!("{:?}", kind)) {
         Some(symbol) => symbol.to_string(),
         _ => " ".to_string(),
     }
@@ -269,7 +266,7 @@ macro_rules! get_decendant_node {
     }
 }
 
-fn get_rss_videos(document: roxmltree::Document, channel_url: &String) -> Vec<Item> {
+fn get_rss_videos(document: roxmltree::Document, channel_url: &str) -> Vec<Item> {
     let title = match document.descendants().find(|n| n.tag_name().name() == "title") {
         Some(node) => node.text().unwrap_or(""),
         None => {
@@ -294,8 +291,9 @@ fn get_rss_videos(document: roxmltree::Document, channel_url: &String) -> Vec<It
             None => "",
         };
         let content = get_decendant_node!(group, "content").text().map(|x| x.to_string());
-        Item { 
-            kind: kind,
+        Item {
+            kind,
+            content,
             channel: title.to_string(),
             title: video_title.to_string(),
             url: url.to_string(),
@@ -303,7 +301,6 @@ fn get_rss_videos(document: roxmltree::Document, channel_url: &String) -> Vec<It
             description: description.to_string(),
             thumbnail: thumbnail.to_string(),
             flag: default_flag(),
-            content: content,
             channel_url: channel_url.to_string()
         }
     }).collect::<Vec<Item>>()
@@ -334,15 +331,15 @@ fn get_atom_videos(channel: roxmltree::Node, channel_url: &String) -> Vec<Item> 
             Err(_) => chrono::offset::Local::now().to_rfc3339(),
         };
         let content = get_decendant_node!(entry, "encoded").text().map(|x| x.to_string());
-        Item { 
-            kind: kind,
+        Item {
+            kind,
+            content,
             channel: title.to_string(),
             title: video_title.to_string(),
             url: url.to_string(),
             published: date,
             description: description.to_string(),
             thumbnail: thumbnail.to_string(),
-            content: content,
             flag: default_flag(),
             channel_url: channel_url.to_string()
         }
@@ -457,7 +454,7 @@ async fn get_channel_videos(client: &reqwest::Client, channel_url: String, chann
             }
         }
     }
-    return None
+  None
 }
 
 async fn get_videos(xml: String, additional_channel_ids: &[String], additional_channel_urls: &[String], original_videos: &Items) -> Vec<Option<ChanelItems>> {
@@ -1094,13 +1091,11 @@ impl YoutubeSubscribtions {
 
     fn find_next(&mut self) -> usize {
         for (i, video) in self.toshow.iter().enumerate() {
-            if i > self.i {
-                if self.search.is_match(&video.title) || self.search.is_match(&video.channel) {
-                    return i;
-                }
-            }
+          if i > self.i && (self.search.is_match(&video.title) || self.search.is_match(&video.channel)) {
+            return i;
+          }
         }
-        self.i 
+        self.i
     }
 
     fn input_with_prefix(&mut self, start_symbol: &str) -> String {
