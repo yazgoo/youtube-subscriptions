@@ -19,12 +19,33 @@ Especially well suited for Raspberry Pi.
 
 You can download a self-contained binary from [releases page](https://github.com/yazgoo/youtube-subscriptions/releases)
 
-# setup (youtube)
+# DEPRECATED setup (youtube)
+
+:warning: looks like subscription_manager file is not available anymore: see next section on how to circumvent that.
 
 Download your [youtube subscriptions OPML](https://www.youtube.com/subscription_manager?action_takeout=1) (you can do that by pressing 'c' in the app).
 
 and save it as the following file:
   ~/.config/youtube-subscriptions/subscription_manager
+
+# setup (youtube)
+
+Create an subscription_manager file:
+
+```
+echo '<opml></opml>' > ~/.config/youtube-subscriptions/subscription_manager
+```
+
+Go to your channel page: https://www.youtube.com/feed/channels
+Save the source of the page in `channels.html`.
+
+Then recover your channels list by running the following command (you need `jq` installed)
+
+```
+grep channelIds channels.html |sed 's/^[^=]*=//'|sed 's/;//' | jq . 2>/dev/null|grep '"channelId"'|cut -d: -f2|sort|uniq
+```
+
+copy all those id in channel_ids list (see configuration section)
 
 # setup (peertube)
 
