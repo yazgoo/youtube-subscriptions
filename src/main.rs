@@ -12,7 +12,9 @@ extern crate html2text;
 extern crate percent_encoding;
 extern crate blockish;
 extern crate blockish_player;
+extern crate num_digitize;
 
+use num_digitize::FromDigits;
 use std::io;
 use utf8::BufReadDecoder;
 use std::fs::File;
@@ -1233,6 +1235,7 @@ impl YoutubeSubscribtions {
         self.first_page();
         self.clear_and_print_videos();
         hide_cursor();
+        let mut numbers : Vec<i64> = vec![];
         loop {
             if self.videos.videos.len() == 0 {
               self.help();
@@ -1260,35 +1263,53 @@ impl YoutubeSubscribtions {
                     match key_event {
                         InputEvent::Keyboard(event) => {
                             match event {
-                                Ctrl('c') | Char('q') => {
-                                    quit();
-                                    break;
-                                },
-                                Char('c') => download_subscriptions(),
-                                Char('j') | Char('l') | Down => self.down(),
-                                Char('k') | Up => self.up(),
-                                Char('g') | Char('H') => self.i = jump(self.i, 0),
-                                Char('M') => self.i = jump(self.i, self.n / 2),
-                                Char('G') | Char('L') => self.i = jump(self.i, self.n - 1),
-                                Char('r') | Char('$') | Left => self.soft_reload(),
-                                Char('P') => self.previous_page(),
-                                Char('N') => self.next_page(),
-                                Char('R') => self.hard_reload().await,
-                                Char('h') | Char('?') => self.help(),
-                                Char('i') | Right => self.info(),
-                                Char('t') => self.flag_unflag(),
-                                Char('T') => {match self.display_current_thumbnail().await {
-                                    Ok(_) => {},
-                                    Err(e) => debug(&format!("error: {:?}", e))
-                                }},
-                                Char('p') | Char('\n') => self.play_current(),
-                                Char('o') => self.open_current(),
-                                Char('/') => self.search(),
-                                Char('n') => self.search_next(),
-                                Char(':') => self.command(),
-                                Char('y') => self.yank_video_uri(),
-                                Char('f') | Char('|') => self.filter(),
-                                _ => debug(&"key not supported (press h for help)".to_string()),
+                                Char(x) if x.is_digit(10) => {x.to_digit(10).map( |digit| numbers.push(digit as i64)) ; },
+                                _ => {
+                                    let n : i64 = numbers.clone().from_digits();
+                                    let n = if n == 0 { 
+                                        1
+                                    } else {
+                                        n
+                                    };
+                                    let mut quitting = false;
+                                    for _ in 0..n {
+                                        match event {
+                                            Ctrl('c') | Char('q') => {
+                                                quit();
+                                                quitting = true;
+                                            },
+                                            Char('c') => download_subscriptions(),
+                                            Char('j') | Char('l') | Down => self.down(),
+                                            Char('k') | Up => self.up(),
+                                            Char('g') | Char('H') => self.i = jump(self.i, 0),
+                                            Char('M') => self.i = jump(self.i, self.n / 2),
+                                            Char('G') | Char('L') => self.i = jump(self.i, self.n - 1),
+                                            Char('r') | Char('$') | Left => self.soft_reload(),
+                                            Char('P') => self.previous_page(),
+                                            Char('N') => self.next_page(),
+                                            Char('R') => self.hard_reload().await,
+                                            Char('h') | Char('?') => self.help(),
+                                            Char('i') | Right => self.info(),
+                                            Char('t') => self.flag_unflag(),
+                                            Char('T') => {match self.display_current_thumbnail().await {
+                                                Ok(_) => {},
+                                                Err(e) => debug(&format!("error: {:?}", e))
+                                            }},
+                                            Char('p') | Char('\n') => self.play_current(),
+                                            Char('o') => self.open_current(),
+                                            Char('/') => self.search(),
+                                            Char('n') => self.search_next(),
+                                            Char(':') => self.command(),
+                                            Char('y') => self.yank_video_uri(),
+                                            Char('f') | Char('|') => self.filter(),
+                                            _ => debug(&"key not supported (press h for help)".to_string()),
+                                        }
+                                        numbers = vec![];
+                                    };
+                                    if quitting {
+                                        break;
+                                    }
+                                }
                             }
                         },
                         InputEvent::Mouse(event) => {
