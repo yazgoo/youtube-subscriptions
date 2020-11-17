@@ -20,7 +20,6 @@ use std::time::Instant;
 use clipboard::{ClipboardProvider, ClipboardContext};
 use serde::{Serialize, Deserialize};
 use std::fs;
-use std::path::Path;
 use std::io::{Read, Write, BufReader};
 use std::io::ErrorKind::NotFound;
 use std::cmp::min;
@@ -34,8 +33,6 @@ use reqwest::header::{HeaderValue, HeaderMap, ETAG, IF_NONE_MATCH, ACCEPT_ENCODI
 use std::collections::HashMap;
 use percent_encoding::percent_decode;
 use blockish::render_image;
-
-use webbrowser;
 
 #[derive(Debug)]
 enum CustomError {
@@ -116,39 +113,43 @@ impl Default for AppConfig {
 
 fn load_config() -> Result<AppConfig, std::io::Error> {
     match dirs::home_dir() {
-        Some(home) => {
-            match home.to_str() {
-                Some(h) => {
-                    let path = format!("{}/.config/youtube-subscriptions/config.json",
-                                       h);
-                    let s = fs::read_to_string(path)?;
-                    let mut _res = serde_json::from_str::<AppConfig>(s.as_str())?;
-                    _res.video_path = _res.video_path.replace("__HOME", &h);
-                    fs::create_dir_all(&_res.video_path)?;
-                    _res.cache_path = _res.cache_path.replace("__HOME", &h);
-                    match Path::new(&_res.cache_path).parent() {
-                        Some(dirname) => fs::create_dir_all(&dirname)?,
-                        None => {
-                            debug(&format!("failed to find dirname of {}", &_res.cache_path));
-                        }
-                    }
-                    Ok(_res)
-                },
-                None => Ok(AppConfig { ..Default::default() })
-            }
-        },
-        None =>
-            Ok(AppConfig { ..Default::default() })
-    }
-}
+        Some(home) => match home.to_str() {
+            Some(h) => {
+                let path = format!("{}/.config/youtube-subscriptions/config.json", h);
 
-fn load_config_fallback() -> AppConfig {
-    match load_config() {
-        Ok(res) => res,
-        Err(e) => {
-            debug(&format!("load_config err: {}", e));
-            AppConfig { ..Default::default() }
-        }
+                let mut _res = match fs::read_to_string(path) {
+                  Ok(s) => serde_json::from_str::<AppConfig>(s.as_str())?,
+                  _ => {
+                    let config_path = format!("{}/.config/youtube-subscriptions/", h);
+                    let config_file_path = format!("{}/.config/youtube-subscriptions/config.json", h);
+                    fs::create_dir_all(&config_path)?;
+                    let mut file = File::create(config_file_path)?;
+                    let default_config = AppConfig {
+                        ..Default::default()
+                    };
+                    let config_as_string = serde_json::to_string(&default_config)?;
+                    file.write_all(config_as_string.as_bytes())?;
+
+                    AppConfig {
+                        ..Default::default()
+                    }
+                  }
+                };
+
+                _res.video_path = _res.video_path.replace("__HOME", &h);
+                fs::create_dir_all(&_res.video_path)?;
+
+                let cache_path = format!("{}/.cache/yts/", h);
+                fs::create_dir_all(&cache_path)?;
+                Ok(_res)
+            }
+            None => Ok(AppConfig {
+                ..Default::default()
+            }),
+        },
+        None => Ok(AppConfig {
+            ..Default::default()
+        }),
     }
 }
 
@@ -158,7 +159,10 @@ fn subscriptions_url() -> &'static str {
 
 fn download_subscriptions() {
     let _res = webbrowser::open(&subscriptions_url());
-    debug(&format!("please save file to ~/{}", subscription_manager_relative_path()));
+    debug(&format!(
+        "please save file to ~/{}",
+        subscription_manager_relative_path()
+    ));
 }
 
 fn subscription_manager_relative_path() -> &'static str {
@@ -211,7 +215,7 @@ fn default_flag() -> Option<Flag> {
 }
 
 fn kind_symbol(app_config: &AppConfig, kind: &ItemKind) -> String {
-    match app_config.kind_symbols.get(&format!("{:?}", kind).to_string()) {
+    match app_config.kind_symbols.get(&format!("{:?}", kind)) {
         Some(symbol) => symbol.to_string(),
         _ => " ".to_string(),
     }
@@ -262,7 +266,7 @@ macro_rules! get_decendant_node {
     }
 }
 
-fn get_rss_videos(document: roxmltree::Document, channel_url: &String) -> Vec<Item> {
+fn get_rss_videos(document: roxmltree::Document, channel_url: &str) -> Vec<Item> {
     let title = match document.descendants().find(|n| n.tag_name().name() == "title") {
         Some(node) => node.text().unwrap_or(""),
         None => {
@@ -287,8 +291,9 @@ fn get_rss_videos(document: roxmltree::Document, channel_url: &String) -> Vec<It
             None => "",
         };
         let content = get_decendant_node!(group, "content").text().map(|x| x.to_string());
-        Item { 
-            kind: kind,
+        Item {
+            kind,
+            content,
             channel: title.to_string(),
             title: video_title.to_string(),
             url: url.to_string(),
@@ -296,7 +301,6 @@ fn get_rss_videos(document: roxmltree::Document, channel_url: &String) -> Vec<It
             description: description.to_string(),
             thumbnail: thumbnail.to_string(),
             flag: default_flag(),
-            content: content,
             channel_url: channel_url.to_string()
         }
     }).collect::<Vec<Item>>()
@@ -327,15 +331,15 @@ fn get_atom_videos(channel: roxmltree::Node, channel_url: &String) -> Vec<Item> 
             Err(_) => chrono::offset::Local::now().to_rfc3339(),
         };
         let content = get_decendant_node!(entry, "encoded").text().map(|x| x.to_string());
-        Item { 
-            kind: kind,
+        Item {
+            kind,
+            content,
             channel: title.to_string(),
             title: video_title.to_string(),
             url: url.to_string(),
             published: date,
             description: description.to_string(),
             thumbnail: thumbnail.to_string(),
-            content: content,
             flag: default_flag(),
             channel_url: channel_url.to_string()
         }
@@ -450,7 +454,7 @@ async fn get_channel_videos(client: &reqwest::Client, channel_url: String, chann
             }
         }
     }
-    return None
+  None
 }
 
 async fn get_videos(xml: String, additional_channel_ids: &[String], additional_channel_urls: &[String], original_videos: &Items) -> Vec<Option<ChanelItems>> {
@@ -498,14 +502,14 @@ fn to_show_videos(app_config: &AppConfig, videos: &mut Vec<Item>, start: usize, 
 }
 
 fn save_videos(app_config: &AppConfig, videos: &Items) {
+    let home = dirs::home_dir().expect("home dir");
     let path = app_config.cache_path.as_str();
+    let proper_path = path.replace("__HOME", home.to_str().expect("home as str"));
     match serde_json::to_string(&videos) {
-        Ok(serialized) => {
-            match fs::write(&path, serialized) {
-                Ok(_) => {},
-                Err(e) => {
-                    debug(&format!("failed writing {} {}", &path, e));
-                }
+        Ok(serialized) => match fs::write(&proper_path, serialized) {
+            Ok(_) => {}
+            Err(e) => {
+                debug(&format!("failed writing {} {}", &proper_path, e));
             }
         },
         Err(e) => {
@@ -1087,13 +1091,11 @@ impl YoutubeSubscribtions {
 
     fn find_next(&mut self) -> usize {
         for (i, video) in self.toshow.iter().enumerate() {
-            if i > self.i {
-                if self.search.is_match(&video.title) || self.search.is_match(&video.channel) {
-                    return i;
-                }
-            }
+          if i > self.i && (self.search.is_match(&video.title) || self.search.is_match(&video.channel)) {
+            return i;
+          }
         }
-        self.i 
+        self.i
     }
 
     fn input_with_prefix(&mut self, start_symbol: &str) -> String {
@@ -1233,6 +1235,9 @@ impl YoutubeSubscribtions {
         self.clear_and_print_videos();
         hide_cursor();
         loop {
+            if self.videos.videos.len() == 0 {
+              self.help();
+            }
             self.handle_resize();
             print_selector(self.i);
             let input = input();
@@ -1325,20 +1330,21 @@ async fn main() {
     match Regex::new("") {
         Ok(empty_regex) => {
             let empty_regex_2 = empty_regex.clone();
-            let mut yts = YoutubeSubscribtions{
+            let mut yts = YoutubeSubscribtions {
                 n: 0,
                 start: 0,
                 search: empty_regex,
                 filter: empty_regex_2,
                 i: 0,
                 toshow: vec![],
-                videos: Items{channel_etags: HashMap::new(), videos: vec![]},
-                app_config: load_config_fallback(),
+                videos: Items {
+                    channel_etags: HashMap::new(),
+                    videos: vec![],
+                },
+                app_config: load_config().expect("loaded config"),
             };
-        yts.run().await;
-        },
-        Err(_) => {
-            println!("failed creating regex")
+            yts.run().await;
         }
+        Err(_) => println!("failed creating regex"),
     }
 }

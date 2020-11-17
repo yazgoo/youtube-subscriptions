@@ -33,6 +33,7 @@ percent-encoding = { version = "2.1" }
 blockish = { version = "0.0.2" }
 blockish-player = { version = "0.0.3" }
 utf-8 =  { version = "0.7.5" }
+openssl-sys = { version = "*", features = ["vendored"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 blockish-caca = { version = "0.0.2" }
