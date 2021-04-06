@@ -1,4 +1,4 @@
-[![Run on Repl.it](https://repl.it/badge/github/yazgoo/youtube-subscriptions)](https://repl.it/github/yazgoo/youtube-subscriptions)
+[![Discord](https://img.shields.io/badge/discord--blue?logo=discord)](https://discord.gg/F684Y8rYwZ)
 
 # youtube-subscriptions
 
