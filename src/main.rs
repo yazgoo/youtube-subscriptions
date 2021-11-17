@@ -34,7 +34,7 @@ use regex::Regex;
 use reqwest::header::{HeaderValue, HeaderMap, ETAG, IF_NONE_MATCH, ACCEPT_ENCODING};
 use std::collections::HashMap;
 use percent_encoding::percent_decode;
-use blockish::render_image;
+use blockish::render_image_fitting_terminal;
 
 #[derive(Debug)]
 enum CustomError {
@@ -1073,8 +1073,9 @@ impl YoutubeSubscribtions {
             let mut out = File::create(&path)?;
             let bytes = resp.bytes().await?;
             out.write_all(&bytes[..])?;
-            let width = get_cols() as u32 * 8;
-            render_image(&path, width);
+            clear();
+            render_image_fitting_terminal(&path);
+            self.wait_key_press_and_clear_and_print_videos();
         }
         Ok(())
     }
