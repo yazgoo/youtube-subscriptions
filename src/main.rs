@@ -73,6 +73,7 @@ struct AppConfig {
     video_path: String,
     cache_path: String,
     youtubedl_format: String,
+    player_additional_opts: Vec<String>,
     video_extension: String,
     kind_symbols: HashMap<String, String>,
     blockish_player: Option<String>,
@@ -93,6 +94,7 @@ impl Default for AppConfig {
             video_path: "/tmp".to_string(),
             cache_path: "__HOME/.cache/yts/yts.json".to_string(),
             youtubedl_format: "[height <=? 360][ext = mp4]".to_string(),
+            player_additional_opts: vec![],
             video_extension: "mp4".to_string(),
             blockish_player: None,
             players: vec![
@@ -827,11 +829,13 @@ fn open_magnet(url: &str, app_config: &AppConfig) {
     }
 }
 
-fn play_url(url: &String, kind: &ItemKind, app_config: &AppConfig) {
+fn play_url(url: &String, kind: &ItemKind, app_config: &AppConfig, no_video: bool) {
     if app_config.mpv_mode && fs::metadata(&app_config.mpv_path).is_ok() {
         let message = format!("playing {} with mpv...", url);
         debug(&message);
             match Command::new(&app_config.mpv_path)
+            .args(&app_config.player_additional_opts)
+            .arg(if no_video { "--no-video" } else { "" })
             .arg(if app_config.fs { "-fs" } else { "" })
             .arg("-really-quiet")
             .arg("--ytdl-format=".to_owned() + &app_config.youtubedl_format)
@@ -862,8 +866,8 @@ fn play_url(url: &String, kind: &ItemKind, app_config: &AppConfig) {
     }
 }
 
-fn play(v: &Item, app_config: &AppConfig) {
-    play_url(&v.url, &v.kind, app_config);
+fn play(v: &Item, app_config: &AppConfig, no_video: bool) {
+    play_url(&v.url, &v.kind, app_config, no_video);
 }
 
 fn print_help() {
@@ -1056,9 +1060,9 @@ impl YoutubeSubscribtions {
         self.toshow = to_show_videos(&self.app_config, &mut self.videos.videos, self.start, self.n, &self.filter);
     }
 
-    fn play_current(&mut self) {
+    fn play_current(&mut self, no_video: bool) {
         if self.i < self.toshow.len() {
-            play(&self.toshow[self.i], &self.app_config);
+            play(&self.toshow[self.i], &self.app_config, no_video);
             self.flag(&Some(Flag::Read));
             self.clear_and_print_videos();
         }
@@ -1148,7 +1152,7 @@ impl YoutubeSubscribtions {
         hide_cursor();
         clear();
         if s.len() == 2 {
-            if let "o" = s[0] { play_url(&s[1].to_string(), &ItemKind::Video, &self.app_config) }
+            if let "o" = s[0] { play_url(&s[1].to_string(), &ItemKind::Video, &self.app_config, false) }
         }
         self.clear_and_print_videos()
     }
@@ -1296,7 +1300,8 @@ impl YoutubeSubscribtions {
                                                 Ok(_) => {},
                                                 Err(e) => debug(&format!("error: {:?}", e))
                                             }},
-                                            Char('p') | Char('\n') => self.play_current(),
+                                            Char('p') | Char('\n') => self.play_current(false),
+                                            Char('a') => self.play_current(true),
                                             Char('o') => self.open_current(),
                                             Char('/') => self.search(),
                                             Char('n') => self.search_next(),
@@ -1318,7 +1323,7 @@ impl YoutubeSubscribtions {
                                 MouseEvent::Press(MouseButton::Left, _x, y) => {
                                     let new_i = usize::from(y) - 1;
                                     if self.i == new_i {
-                                        self.play_current();
+                                        self.play_current(false);
                                     }
                                     else {
                                         self.i = jump(self.i, new_i);
