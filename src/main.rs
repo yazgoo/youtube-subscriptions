@@ -270,15 +270,7 @@ macro_rules! get_decendant_node {
     }
 }
 
-fn get_rss_videos(document: roxmltree::Document, channel_url: &str) -> Vec<Item> {
-    let title = match document.descendants().find(|n| n.tag_name().name() == "title") {
-        Some(node) => node.text().unwrap_or(""),
-        None => {
-            debug("did not find title node");
-            ""
-        }
-    };
-    document.descendants().filter(|n| n.tag_name().name() == "entry").map(|entry| {
+fn entry_to_item_rss(title: &String, channel_url: &str, entry: roxmltree::Node) -> Item {
         let mut kind = ItemKind::Other;
         let url = get_decendant_node!(entry, "link").attribute("href").unwrap_or("");
         let video_title = get_decendant_node!(entry, "title").text().unwrap_or("");
@@ -307,12 +299,26 @@ fn get_rss_videos(document: roxmltree::Document, channel_url: &str) -> Vec<Item>
             flag: default_flag(),
             channel_url: channel_url.to_string()
         }
+}
+
+fn get_title(document: &roxmltree::Document) -> String {
+    match document.descendants().find(|n| n.tag_name().name() == "title") {
+        Some(node) => node.text().unwrap_or(""),
+        None => {
+            debug("did not find title node");
+            ""
+        }
+    }.to_string()
+}
+
+fn get_rss_videos(document: roxmltree::Document, channel_url: &str) -> Vec<Item> {
+    let title = get_title(&document);
+    document.descendants().filter(|n| n.tag_name().name() == "entry").map(|entry| {
+        entry_to_item_rss(&title, channel_url, entry)
     }).collect::<Vec<Item>>()
 }
 
-fn get_atom_videos(channel: roxmltree::Node, channel_url: &String) -> Vec<Item> {
-    let title = get_decendant_node!(channel, "title").text().unwrap_or("");
-    channel.descendants().filter(|n| n.tag_name().name() == "item").map(|entry| {
+fn entry_to_item_atom(title: &str, channel_url: &str, entry: roxmltree::Node) -> Item {
         let mut kind = ItemKind::Other;
         let url = get_decendant_node!(entry, "enclosure").attribute("url").map( |x| {
             kind = if x.starts_with("magnet:") {
@@ -347,6 +353,12 @@ fn get_atom_videos(channel: roxmltree::Node, channel_url: &String) -> Vec<Item> 
             flag: default_flag(),
             channel_url: channel_url.to_string()
         }
+}
+
+fn get_atom_videos(channel: roxmltree::Node, channel_url: &String) -> Vec<Item> {
+    let title = get_decendant_node!(channel, "title").text().unwrap_or("");
+    channel.descendants().filter(|n| n.tag_name().name() == "item").map(|entry| {
+        entry_to_item_atom(&title, channel_url, entry)
     }).collect::<Vec<Item>>()
 }
 
@@ -505,10 +517,14 @@ fn to_show_videos(app_config: &AppConfig, videos: &mut Vec<Item>, start: usize, 
     result
 }
 
-fn save_videos(app_config: &AppConfig, videos: &Items) {
+fn replace_home(path: &String) -> String {
     let home = dirs::home_dir().expect("home dir");
-    let path = app_config.cache_path.as_str();
-    let proper_path = path.replace("__HOME", home.to_str().expect("home as str"));
+    let path = path.as_str();
+    path.replace("__HOME", home.to_str().expect("home as str"))
+}
+
+fn save_videos(app_config: &AppConfig, videos: &Items) {
+    let proper_path = replace_home(&app_config.cache_path);
     match serde_json::to_string(&videos) {
         Ok(serialized) => match fs::write(&proper_path, serialized) {
             Ok(_) => {}
@@ -525,8 +541,8 @@ fn save_videos(app_config: &AppConfig, videos: &Items) {
 async fn load(reload: bool, app_config: &AppConfig, original_videos: &Items) -> Option<Items> {
     match get_subscriptions_xml() {
         Ok(xml) => {
-            let path = app_config.cache_path.as_str();
-            if reload || fs::metadata(path).is_err() {
+            let path = replace_home(&app_config.cache_path);
+            if reload || fs::metadata(&path).is_err() {
                 let mut one_query_failed = false;
                 let empty_vec = vec![];
                 let mut etags : ChannelEtags = HashMap::new();
@@ -561,7 +577,7 @@ async fn load(reload: bool, app_config: &AppConfig, original_videos: &Items) -> 
                 save_videos(app_config, &videos);
                 Some(videos)
             } else {
-                match fs::read_to_string(path) {
+                match fs::read_to_string(&path) {
                     Ok(s) => 
                         match serde_json::from_str(s.as_str()) {
                             Ok(res) => Some(res),
@@ -889,6 +905,7 @@ fn print_help() {
   /          search
   f          filter
   p,enter    plays selected video
+  a          plays selected item audio only
   o          open selected video in browser
   t          tag untag a video as read
   T          display thumbnail in browser
