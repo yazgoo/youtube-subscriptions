@@ -8,7 +8,6 @@ extern crate crossterm_input;
 extern crate ctrlc;
 extern crate dirs;
 extern crate html2text;
-extern crate num_digitize;
 extern crate percent_encoding;
 extern crate reqwest;
 extern crate roxmltree;
@@ -20,7 +19,6 @@ use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm_input::KeyEvent::{Char, Ctrl, Down, Left, Right, Up};
 use crossterm_input::{input, InputEvent, MouseButton, MouseEvent, RawScreen};
 use futures::future::join_all;
-use num_digitize::FromDigits;
 use percent_encoding::percent_decode;
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_ENCODING, ETAG, IF_NONE_MATCH};
@@ -1462,7 +1460,10 @@ impl YoutubeSubscribtions {
                             x.to_digit(10).map(|digit| numbers.push(digit as i64));
                         }
                         _ => {
-                            let n: i64 = numbers.clone().from_digits();
+                            let mut n: i64 = 0;
+                            for i in 0..numbers.len() {
+                                n = n * 10 + numbers[i];
+                            }
                             let n = if n == 0 { 1 } else { n };
                             let mut quitting = false;
                             for _ in 0..n {
