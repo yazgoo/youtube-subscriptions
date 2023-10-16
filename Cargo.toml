@@ -32,13 +32,13 @@ ctrlc = { version = "3.1" }
 html2text = { version = "0.6" }
 percent-encoding = { version = "2.1" }
 blockish = { version = "0.1.2" }
-blockish-player = { version = "0.0.4" }
+blockish-player = { version = "0.0.5" }
 utf-8 =  { version = "0.7.5" }
 openssl-sys = { version = "0.9", features = ["vendored"] }
 num-digitize = "0.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-blockish-caca = { version = "0.0.4" }
+blockish-caca = { version = "0.0.6" }
 
 [profile.dev]
 # Optimize by default so we don't need to remember to always pass in --release

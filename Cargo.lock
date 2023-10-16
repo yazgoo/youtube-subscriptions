@@ -169,35 +169,24 @@ dependencies = [
 
 [[package]]
 name = "blockish-caca"
-version = "0.0.4"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d47e215ce5649450616c627415bcc4ddd8398f0114ac793d915d01be6dcc150"
+checksum = "5c17500667d683d7c13d4ae78a5203b075e0354ace6e79ebd37767315d9ef275"
 dependencies = [
  "blockish",
- "blockish-player 0.0.2",
- "crossterm 0.27.0",
+ "blockish-player",
+ "crossterm",
  "gag",
  "redhook",
 ]
 
 [[package]]
 name = "blockish-player"
-version = "0.0.2"
+version = "0.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16c73e78ba889b83182dfb40cb32e8e6347705044548897a4c9433b32692b0a7"
+checksum = "0b485b3973f9238534748f146ffef6a281361308237573928cb1b7a737609ae4"
 dependencies = [
- "crossterm 0.14.2",
- "glob",
- "regex",
-]
-
-[[package]]
-name = "blockish-player"
-version = "0.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abd155a16833c38b979901e6b5aa504ba1858096d89cb76257558ce2fa40102e"
-dependencies = [
- "crossterm 0.27.0",
+ "crossterm",
  "glob",
  "regex",
 ]
@@ -331,15 +320,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cloudabi"
-version = "0.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddfc5b9aa5d4507acaf872de71051dfd0e309860e88966e1051e462a077aac4f"
-dependencies = [
- "bitflags 1.3.2",
-]
-
-[[package]]
 name = "color_quant"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -444,22 +424,6 @@ dependencies = [
 
 [[package]]
 name = "crossterm"
-version = "0.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5750773d74a7dc612eac2ded3f55e9cdeeaa072210cd17c0192aedb48adb3618"
-dependencies = [
- "bitflags 1.3.2",
- "crossterm_winapi 0.5.1",
- "lazy_static",
- "libc",
- "mio 0.6.23",
- "parking_lot 0.10.2",
- "signal-hook 0.1.17",
- "winapi 0.3.9",
-]
-
-[[package]]
-name = "crossterm"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f476fe445d41c9e991fd07515a6f463074b782242ccf4a5b7b1d1012e70824df"
@@ -468,8 +432,8 @@ dependencies = [
  "crossterm_winapi 0.9.1",
  "libc",
  "mio 0.8.8",
- "parking_lot 0.12.1",
- "signal-hook 0.3.17",
+ "parking_lot",
+ "signal-hook",
  "signal-hook-mio",
  "winapi 0.3.9",
 ]
@@ -517,15 +481,6 @@ name = "crossterm_winapi"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df25e92a352488d9b3e0215e4e99402945993026159f98b477047719f16a6530"
-dependencies = [
- "winapi 0.3.9",
-]
-
-[[package]]
-name = "crossterm_winapi"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8777c700901e2d5b50c406f736ed6b8f9e43645c7e104ddb74f8bc42b8ae62f6"
 dependencies = [
  "winapi 0.3.9",
 ]
@@ -1219,15 +1174,6 @@ checksum = "da2479e8c062e40bf0066ffa0bc823de0a9368974af99c9f6df941d2c231e03f"
 
 [[package]]
 name = "lock_api"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4da24a77a3d8a6d4862d95f72e6fdb9c09a643ecdb402d754004a557f2bec75"
-dependencies = [
- "scopeguard",
-]
-
-[[package]]
-name = "lock_api"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1cc9717a20b1bb222f333e6a92fd32f7d8a18ddc5a3191a11af45dcbf4dcd16"
@@ -1657,36 +1603,12 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "parking_lot"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3a704eb390aafdc107b0e392f56a82b668e3a71366993b5340f5833fd62505e"
-dependencies = [
- "lock_api 0.3.4",
- "parking_lot_core 0.7.3",
-]
-
-[[package]]
-name = "parking_lot"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3742b2c103b9f06bc9fff0a37ff4912935851bee6d36f3c02bcc755bcfec228f"
 dependencies = [
- "lock_api 0.4.10",
- "parking_lot_core 0.9.8",
-]
-
-[[package]]
-name = "parking_lot_core"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b93f386bb233083c799e6e642a9d73db98c24a5deeb95ffc85bf281255dffc98"
-dependencies = [
- "cfg-if 0.1.10",
- "cloudabi",
- "libc",
- "redox_syscall 0.1.57",
- "smallvec",
- "winapi 0.3.9",
+ "lock_api",
+ "parking_lot_core",
 ]
 
 [[package]]
@@ -1940,12 +1862,6 @@ checksum = "258248256d99540861733079be41beee5c0014bb727de4245237b2c10a479735"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "redox_syscall"
-version = "0.1.57"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41cc0f7e4d5d4544e8861606a285bb08d3e70712ccc7d2b84d7c0ccfaf4b05ce"
 
 [[package]]
 name = "redox_syscall"
@@ -2250,17 +2166,6 @@ dependencies = [
 
 [[package]]
 name = "signal-hook"
-version = "0.1.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e31d442c16f047a671b5a71e2161d6e68814012b7f5379d269ebd915fac2729"
-dependencies = [
- "libc",
- "mio 0.6.23",
- "signal-hook-registry",
-]
-
-[[package]]
-name = "signal-hook"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8621587d4798caf8eb44879d42e56b9a93ea5dcd315a6487c357130095b62801"
@@ -2277,7 +2182,7 @@ checksum = "29ad2e15f37ec9a6cc544097b78a1ec90001e9f71b81338ca39f430adaca99af"
 dependencies = [
  "libc",
  "mio 0.8.8",
- "signal-hook 0.3.17",
+ "signal-hook",
 ]
 
 [[package]]
@@ -2384,7 +2289,7 @@ version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 dependencies = [
- "lock_api 0.4.10",
+ "lock_api",
 ]
 
 [[package]]
@@ -2395,7 +2300,7 @@ checksum = "f91138e76242f575eb1d3b38b4f1362f10d3a43f47d182a5b359af488a02293b"
 dependencies = [
  "new_debug_unreachable",
  "once_cell",
- "parking_lot 0.12.1",
+ "parking_lot",
  "phf_shared",
  "precomputed-hash",
  "serde",
@@ -3206,10 +3111,10 @@ dependencies = [
  "base64",
  "blockish",
  "blockish-caca",
- "blockish-player 0.0.4",
+ "blockish-player",
  "chrono",
  "copypasta",
- "crossterm 0.27.0",
+ "crossterm",
  "crossterm_input",
  "ctrlc",
  "dirs",
