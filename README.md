@@ -37,12 +37,13 @@ echo '<opml></opml>' > ~/.config/youtube-subscriptions/subscription_manager
 ```
 
 Go to your channel page: https://www.youtube.com/feed/channels
+Scroll to the bottom of the page til all your channels are loaded.
 Save the source of the page in `channels.html`.
 
-Then recover your channels list by running the following command (you need `jq` installed)
+Then recover your channels list by running the following command (can take a long time if you have a lot of channels) 
 
 ```
-grep channelIds channels.html |sed 's/^[^=]*=//'|sed 's/;//' | jq . 2>/dev/null|grep '"channelId"'|cut -d: -f2|sort|uniq
+./extract-channel-ids.sh channels.html | tee channel_ids
 ```
 
 copy all those id in channel_ids list (see configuration section)
