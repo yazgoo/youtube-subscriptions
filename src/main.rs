@@ -16,7 +16,8 @@ extern crate serde;
 use blockish::render_image_fitting_terminal;
 use chrono::DateTime;
 use copypasta::{ClipboardContext, ClipboardProvider};
-use crossterm_input::KeyEvent::{Char, Ctrl, Down, Left, Right, Up};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use crossterm_input::KeyEvent::{self, Char, Ctrl, Down, Left, Right, Up};
 use crossterm_input::{input, InputEvent, MouseButton, MouseEvent, RawScreen};
 use futures::future::join_all;
 use percent_encoding::percent_decode;
@@ -818,6 +819,7 @@ struct YoutubeSubscribtions {
     toshow: Vec<Item>,
     videos: Items,
     app_config: AppConfig,
+    filter_chars: Vec<char>,
 }
 
 fn print_videos(app_config: &AppConfig, toshow: &[Item]) {
@@ -1298,6 +1300,35 @@ impl YoutubeSubscribtions {
         self.i
     }
 
+    fn realtime_input_with_prefix(&mut self, start_symbol: &str) -> Option<String> {
+        move_to_bottom();
+        clear_to_end_of_line();
+        print!("{}", start_symbol);
+        for c in self.filter_chars.iter() {
+            print!("{}", c);
+        }
+        flush_stdout();
+        let _ = enable_raw_mode();
+        let input = input();
+        let mut reader = input.read_sync();
+        match reader.next() {
+            Some(InputEvent::Keyboard(KeyEvent::Backspace)) => {
+                self.filter_chars.pop();
+            }
+            Some(InputEvent::Keyboard(KeyEvent::Enter)) => {
+                let _ = disable_raw_mode();
+                return None;
+            }
+            Some(InputEvent::Keyboard(KeyEvent::Char(c))) => {
+                print!("{}", c);
+                self.filter_chars.push(c)
+            }
+            _ => {}
+        }
+        let _ = disable_raw_mode();
+        Some(self.filter_chars.iter().collect::<String>())
+    }
+
     fn input_with_prefix(&mut self, start_symbol: &str) -> String {
         move_to_bottom();
         clear_to_end_of_line();
@@ -1324,8 +1355,7 @@ impl YoutubeSubscribtions {
         self.clear_and_print_videos()
     }
 
-    fn filter(&mut self) {
-        let s = self.input_with_prefix("|");
+    fn set_filter(&mut self, s: &String) {
         match Regex::new(&format!(".*(?i){}.*", s)) {
             Ok(regex) => {
                 self.filter = regex;
@@ -1333,7 +1363,20 @@ impl YoutubeSubscribtions {
             }
             Err(_) => debug("failing creating regex"),
         }
-        self.clear_and_print_videos()
+        self.clear_and_print_videos();
+    }
+
+    fn filter(&mut self) {
+        self.filter_chars = vec![];
+        self.set_filter(&"".into());
+        loop {
+            match self.realtime_input_with_prefix("|") {
+                Some(s) => self.set_filter(&s),
+                None => {
+                    break;
+                }
+            }
+        }
     }
 
     fn command(&mut self) {
@@ -1489,7 +1532,7 @@ impl YoutubeSubscribtions {
                                         Ok(_) => {}
                                         Err(e) => debug(&format!("error: {:?}", e)),
                                     },
-                                    Char('p') | Char('\n') => self.play_current(false),
+                                    Char('p') | KeyEvent::Enter => self.play_current(false),
                                     Char('a') => self.play_current(true),
                                     Char('o') => self.open_current(),
                                     Char('/') => self.search(),
@@ -1548,6 +1591,7 @@ async fn main() {
                     videos: vec![],
                 },
                 app_config: load_config().expect("loaded config"),
+                filter_chars: vec![],
             };
             yts.run().await;
         }
