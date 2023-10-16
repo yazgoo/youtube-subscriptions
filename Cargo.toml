@@ -2,7 +2,7 @@
 name = "youtube-subscriptions"
 version = "0.2.75"
 authors = ["yazgoo <yazgoo@gmail.com>"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 description = "terminal UI for viewing youtube subscriptions"
 readme = "README.md"
@@ -14,14 +14,15 @@ categories = ["command-line-utilities"]
 [dependencies]
 dirs = { version = "2.0.1", default-features = false }
 serde = { version = "1.0", features = ["derive"], default-features = false }
-serde_json = { version = "1.0", default-features = false }
+serde_json = { version = "1.0", features = ["std"], default-features = false }
+
 crossterm_input = { version = "0.3", default-features = false }
 crossterm = { version = "0.14" }
 rayon = { version = "1.1", default-features=false }
 clipboard = { version = "0.5", default-features=false }
 roxmltree = { version = "0.7", default-features = false }
-reqwest = { version = " 0.10", features = ["gzip", "rustls-tls", "blocking"] }
-webbrowser = { git="https://github.com/yazgoo/webbrowser-rs#a36dcbf", version = "= 0.5.2" }
+reqwest = { version = "0.10", features = ["gzip", "rustls-tls", "blocking"] }
+webbrowser = { version = "0.8" }
 futures = { version = "0.3" , features = ["compat"] }
 tokio = { version = "0.2.0-alpha", features = ["macros"] }
 chrono = { version = "0.4" }
