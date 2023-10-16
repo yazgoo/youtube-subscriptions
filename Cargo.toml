@@ -32,7 +32,7 @@ ctrlc = { version = "3.1" }
 html2text = { version = "0.6" }
 percent-encoding = { version = "2.1" }
 blockish = { version = "0.1.2" }
-blockish-player = { version = "0.0.3" }
+blockish-player = { version = "0.0.4" }
 utf-8 =  { version = "0.7.5" }
 openssl-sys = { version = "0.9", features = ["vendored"] }
 num-digitize = "0.4"

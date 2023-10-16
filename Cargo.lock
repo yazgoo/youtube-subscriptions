@@ -193,11 +193,11 @@ dependencies = [
 
 [[package]]
 name = "blockish-player"
-version = "0.0.3"
+version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c7560d94cb5c55726a4b529404395d4e2c7661bb89b92a518e654ec91d3bcc5"
+checksum = "abd155a16833c38b979901e6b5aa504ba1858096d89cb76257558ce2fa40102e"
 dependencies = [
- "crossterm 0.14.2",
+ "crossterm 0.27.0",
  "glob",
  "regex",
 ]
@@ -3206,7 +3206,7 @@ dependencies = [
  "base64",
  "blockish",
  "blockish-caca",
- "blockish-player 0.0.3",
+ "blockish-player 0.0.4",
  "chrono",
  "copypasta",
  "crossterm 0.27.0",
