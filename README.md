@@ -102,4 +102,5 @@ simply run:
 ```sh
 ./cross-build-raspberry.sh
 ```
+
 binary will be in `target/arm-unknown-linux-gnueabihf/release/youtube-subscriptions`
