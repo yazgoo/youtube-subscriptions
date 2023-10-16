@@ -38,7 +38,7 @@ openssl-sys = { version = "0.9", features = ["vendored"] }
 num-digitize = "0.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-blockish-caca = { version = "0.0.2" }
+blockish-caca = { version = "0.0.3" }
 
 [profile.dev]
 # Optimize by default so we don't need to remember to always pass in --release
