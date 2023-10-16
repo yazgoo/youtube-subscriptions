@@ -19,15 +19,6 @@ Especially well suited for Raspberry Pi.
 
 You can download a self-contained binary from [releases page](https://github.com/yazgoo/youtube-subscriptions/releases)
 
-# DEPRECATED setup (youtube)
-
-:warning: looks like subscription_manager file is not available anymore: see next section on how to circumvent that.
-
-Download your [youtube subscriptions OPML](https://www.youtube.com/subscription_manager?action_takeout=1) (you can do that by pressing 'c' in the app).
-
-and save it as the following file:
-  ~/.config/youtube-subscriptions/subscription_manager
-
 # setup (youtube)
 
 Create an subscription_manager file:
