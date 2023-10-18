@@ -615,9 +615,7 @@ fn to_show_videos(
     let filtered_videos = videos
         .iter()
         .filter(|video| {
-            filter.is_match(&video.title)
-                || filter.is_match(&video.channel)
-                || filter.is_match(&format!("{:?}", video.kind))
+            filter.is_match(&format!("{:?}{}{}", video.kind, video.channel, video.title))
         })
         .cloned()
         .collect::<Vec<Item>>();
@@ -756,7 +754,7 @@ fn rmcup() {
 fn clear() {
     print!("\x1b[2J");
     flush_stdout();
-    move_cursor(0);
+    move_cursor(0, 0);
 }
 
 fn show_cursor() {
@@ -764,8 +762,8 @@ fn show_cursor() {
     flush_stdout();
 }
 
-fn move_cursor(i: usize) {
-    print!("\x1b[{};0f", i + 1);
+fn move_cursor(i: usize, j: usize) {
+    print!("\x1b[{};{}f", i + 1, j + 1);
     flush_stdout();
 }
 
@@ -787,20 +785,24 @@ fn debug(s: &str) {
     flush_stdout();
 }
 
-fn print_selector(i: usize) {
-    move_cursor(i);
+fn print_selector(i: usize, col_width: usize) {
+    move_cursor(i, 0);
+    print!("\x1b[1m|\x1b[0m\r");
+    move_cursor(i, col_width);
     print!("\x1b[1m|\x1b[0m\r");
     flush_stdout();
 }
 
-fn clear_selector(i: usize) {
-    move_cursor(i);
+fn clear_selector(i: usize, col_width: usize) {
+    move_cursor(i, 0);
+    print!(" ");
+    move_cursor(i, col_width);
     print!(" ");
     flush_stdout();
 }
 
-fn jump(i: usize, new_i: usize) -> usize {
-    clear_selector(i);
+fn jump(i: usize, new_i: usize, col_width: usize) -> usize {
+    clear_selector(i, col_width);
     new_i
 }
 
@@ -811,6 +813,7 @@ fn pause() {
 }
 
 struct YoutubeSubscribtions {
+    col_width: usize,
     n: usize,
     start: usize,
     search: Regex,
@@ -820,47 +823,6 @@ struct YoutubeSubscribtions {
     videos: Items,
     app_config: AppConfig,
     filter_chars: Vec<char>,
-}
-
-fn print_videos(app_config: &AppConfig, toshow: &[Item]) {
-    let cols = get_cols();
-    let channel_max_size = cols / 3;
-    let max = toshow.iter().fold(0, |acc, x| {
-        std::cmp::max(
-            std::cmp::min(x.channel.chars().count(), channel_max_size),
-            acc,
-        )
-    });
-    for video in toshow {
-        let published = video.published.split('T').collect::<Vec<&str>>();
-        let whitespaces =
-            " ".repeat(max - std::cmp::min(video.channel.chars().count(), channel_max_size));
-        let channel_short = video
-            .channel
-            .chars()
-            .take(channel_max_size)
-            .collect::<String>();
-        let published_short = if published.len() > 0 && published[0].len() >= 10 {
-            published[0][5..10].to_string()
-        } else {
-            "?? ??".to_string()
-        };
-        let s = format!(
-            " {} {} \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{} {}",
-            flag_to_string(&video.flag),
-            kind_symbol(&app_config, &video.kind),
-            published_short,
-            channel_short,
-            whitespaces,
-            video.title
-        );
-        println!(
-            "{}",
-            s.chars()
-                .take(min(s.chars().count(), cols - 4 + 9 + 9 + 1))
-                .collect::<String>()
-        );
-    }
 }
 
 fn print_press_any_key_and_pause() {
@@ -1102,6 +1064,10 @@ fn info_lines(v: &Item) -> Vec<String> {
     lines
 }
 
+fn print_tildeline() {
+    println!("\x1b[34;1m~\x1b[0m");
+}
+
 fn print_lines(lines: &Vec<String>, start: usize, rows: usize) {
     let stop = min(lines.len(), start + rows);
     for (_, line) in lines[start..stop].iter().enumerate() {
@@ -1109,7 +1075,7 @@ fn print_lines(lines: &Vec<String>, start: usize, rows: usize) {
     }
     if stop >= start {
         for _ in (stop - start)..rows {
-            println!("\x1b[34;1m~\x1b[0m");
+            print_tildeline();
         }
     }
 }
@@ -1185,9 +1151,56 @@ fn quit() {
 }
 
 impl YoutubeSubscribtions {
+    fn print_videos(&mut self) {
+        let cols = get_cols();
+        let rows = get_lines();
+        let channel_max_size = cols / 3;
+        let max = self.toshow.iter().fold(0, |acc, x| {
+            std::cmp::max(
+                std::cmp::min(x.channel.chars().count(), channel_max_size),
+                acc,
+            )
+        });
+        self.col_width = max + 11;
+        for video in &self.toshow {
+            let published = video.published.split('T').collect::<Vec<&str>>();
+            let whitespaces =
+                " ".repeat(max - std::cmp::min(video.channel.chars().count(), channel_max_size));
+            let channel_short = video
+                .channel
+                .chars()
+                .take(channel_max_size)
+                .collect::<String>();
+            let published_short = if published.len() > 0 && published[0].len() >= 10 {
+                published[0][5..10].to_string()
+            } else {
+                "?? ??".to_string()
+            };
+            let s = format!(
+                " {} {} \x1b[36m{}\x1b[0m \x1b[34m{}\x1b[0m{}  {}",
+                flag_to_string(&video.flag),
+                kind_symbol(&self.app_config, &video.kind),
+                published_short,
+                channel_short,
+                whitespaces,
+                video.title
+            );
+            println!(
+                "{}",
+                s.chars()
+                    .take(min(s.chars().count(), cols - 4 + 9 + 9 + 1))
+                    .collect::<String>()
+            );
+        }
+        if self.toshow.len() < rows {
+            for _ in 0..(rows - self.toshow.len()) {
+                print_tildeline();
+            }
+        }
+    }
     fn clear_and_print_videos(&mut self) {
         clear();
-        print_videos(&self.app_config, &self.toshow)
+        self.print_videos()
     }
 
     fn move_page(&mut self, direction: i8) {
@@ -1339,7 +1352,7 @@ impl YoutubeSubscribtions {
     }
 
     fn search_next(&mut self) {
-        clear_selector(self.i);
+        clear_selector(self.i, self.col_width);
         self.i = self.find_next();
     }
 
@@ -1356,7 +1369,8 @@ impl YoutubeSubscribtions {
     }
 
     fn set_filter(&mut self, s: &String) {
-        match Regex::new(&format!(".*(?i){}.*", s)) {
+        let wildcard_s = s.replace("", ".*");
+        match Regex::new(&format!(".*(?i){}.*", wildcard_s)) {
             Ok(regex) => {
                 self.filter = regex;
                 self.move_page(0);
@@ -1446,11 +1460,15 @@ impl YoutubeSubscribtions {
     }
 
     fn up(&mut self) {
-        self.i = jump(self.i, if self.i > 0 { self.i - 1 } else { self.n - 1 });
+        self.i = jump(
+            self.i,
+            if self.i > 0 { self.i - 1 } else { self.n - 1 },
+            self.col_width,
+        );
     }
 
     fn down(&mut self) {
-        self.i = jump(self.i, self.i + 1);
+        self.i = jump(self.i, self.i + 1, self.col_width);
     }
 
     fn handle_resize(&mut self) {
@@ -1479,7 +1497,7 @@ impl YoutubeSubscribtions {
                 self.help();
             }
             self.handle_resize();
-            print_selector(self.i);
+            print_selector(self.i, self.col_width);
             let input = input();
             let result;
             {
@@ -1518,9 +1536,13 @@ impl YoutubeSubscribtions {
                                     Char('c') => download_subscriptions(),
                                     Char('j') | Char('l') | Down => self.down(),
                                     Char('k') | Up => self.up(),
-                                    Char('g') | Char('H') => self.i = jump(self.i, 0),
-                                    Char('M') => self.i = jump(self.i, self.n / 2),
-                                    Char('G') | Char('L') => self.i = jump(self.i, self.n - 1),
+                                    Char('g') | Char('H') => {
+                                        self.i = jump(self.i, 0, self.col_width)
+                                    }
+                                    Char('M') => self.i = jump(self.i, self.n / 2, self.col_width),
+                                    Char('G') | Char('L') => {
+                                        self.i = jump(self.i, self.n - 1, self.col_width)
+                                    }
                                     Char('r') | Char('$') | Left => self.soft_reload(),
                                     Char('P') => self.previous_page(),
                                     Char('N') => self.next_page(),
@@ -1555,7 +1577,7 @@ impl YoutubeSubscribtions {
                             if self.i == new_i {
                                 self.play_current(false);
                             } else {
-                                self.i = jump(self.i, new_i);
+                                self.i = jump(self.i, new_i, self.col_width);
                             }
                         }
                         MouseEvent::Press(MouseButton::WheelUp, _x, _y) => self.up(),
@@ -1580,6 +1602,7 @@ async fn main() {
         Ok(empty_regex) => {
             let empty_regex_2 = empty_regex.clone();
             let mut yts = YoutubeSubscribtions {
+                col_width: 0,
                 n: 0,
                 start: 0,
                 search: empty_regex,
