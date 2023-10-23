@@ -84,6 +84,7 @@ struct AppConfig {
     fs: bool,
     open_magnet: Option<String>,
     sort: String,
+    auto_thumbnail_path: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -130,6 +131,7 @@ impl Default for AppConfig {
             fs: true,
             open_magnet: None,
             sort: "desc".to_string(),
+            auto_thumbnail_path: None,
         }
     }
 }
@@ -517,7 +519,8 @@ async fn get_channel_videos(
     channel_etag: Option<&String>,
     original_videos: &Items,
 ) -> Option<ChanelItems> {
-    for _i in 0..2 {
+    let max_tries = 5;
+    for i in 0..max_tries {
         let request = build_request(&channel_url, &client, channel_etag);
         let wrapped_response = request.send().await;
         match wrapped_response {
@@ -549,9 +552,18 @@ async fn get_channel_videos(
                     }
                 }
             }
-            Err(_e) if _i == 1 => debug(&format!("failed loading {}: {}", &channel_url, _e)),
-            Err(_) => {}
+            Err(_e) if i == (max_tries - 1) => {
+                debug(&format!("failed loading {}: {}", &channel_url, _e))
+            }
+            Err(e) => debug(&format!(
+                "retrying after fail #{} for {}: {:?}",
+                i,
+                &channel_url,
+                e.status()
+            )),
         }
+        let dur = std::time::Duration::from_secs(i);
+        std::thread::sleep(dur);
     }
     None
 }
@@ -1025,7 +1037,7 @@ fn print_help() {
   a          plays selected item audio only
   o          open selected video in browser
   t          tag untag a video as read
-  T          display thumbnail in browser
+  T          display thumbnail
   y          copy video url in system clipboard
   c          download subscriptions default browser
   "
@@ -1272,22 +1284,53 @@ impl YoutubeSubscribtions {
         }
     }
 
+    async fn write_thumbnail(&mut self, i: usize) -> Result<String, CustomError> {
+        let url = &self.toshow[i].thumbnail;
+        let path = format!(
+            "{}/{}.{}",
+            self.app_config.video_path,
+            base64::encode(&url),
+            ".jpg"
+        );
+        if fs::metadata(&path).is_ok() {
+            return Ok(path);
+        }
+        let resp = reqwest::get(url).await?;
+        let mut out = File::create(&path)?;
+        let bytes = resp.bytes().await?;
+        out.write_all(&bytes[..])?;
+        Ok(path)
+    }
+
     async fn display_current_thumbnail(&mut self) -> Result<(), CustomError> {
         if self.i < self.toshow.len() {
-            let url = &self.toshow[self.i].thumbnail;
-            let resp = reqwest::get(url).await?;
-            let path = format!(
-                "{}/{}.{}",
-                self.app_config.video_path,
-                base64::encode(&url),
-                ".jpg"
-            );
-            let mut out = File::create(&path)?;
-            let bytes = resp.bytes().await?;
-            out.write_all(&bytes[..])?;
+            let path = self.write_thumbnail(self.i).await?;
             clear();
             render_image_fitting_terminal(&path);
             self.wait_key_press_and_clear_and_print_videos();
+        }
+        Ok(())
+    }
+
+    async fn current_thumbnail_to_thumbnail_jpg(&mut self) -> Result<(), CustomError> {
+        match self.app_config.auto_thumbnail_path.clone() {
+            Some(thumbnail_path) => {
+                if self.i < self.toshow.len() {
+                    let i = self.i;
+                    let path = self.write_thumbnail(i).await?;
+                    // copy path to ytsthumbnail.jpg
+                    let channel = &self.toshow[i].channel;
+                    let title = &self.toshow[i].title;
+                    // write channel and title to a $thumbnail_path.jpg.txt
+                    let mut file = File::create(format!("{}.txt", thumbnail_path))?;
+                    file.write_all(channel.as_bytes())?;
+                    file.write_all(b"\n")?;
+                    file.write_all(title.as_bytes())?;
+                    file.flush()?;
+                    fs::copy(&path, &thumbnail_path)?;
+                }
+            }
+            None => {}
         }
         Ok(())
     }
@@ -1534,18 +1577,35 @@ impl YoutubeSubscribtions {
                                         quitting = true;
                                     }
                                     Char('c') => download_subscriptions(),
-                                    Char('j') | Char('l') | Down => self.down(),
-                                    Char('k') | Up => self.up(),
-                                    Char('g') | Char('H') => {
-                                        self.i = jump(self.i, 0, self.col_width)
+                                    Char('j') | Char('l') | Down => {
+                                        self.down();
+                                        let _ = self.current_thumbnail_to_thumbnail_jpg().await;
                                     }
-                                    Char('M') => self.i = jump(self.i, self.n / 2, self.col_width),
+                                    Char('k') | Up => {
+                                        self.up();
+                                        let _ = self.current_thumbnail_to_thumbnail_jpg().await;
+                                    }
+                                    Char('g') | Char('H') => {
+                                        self.i = jump(self.i, 0, self.col_width);
+                                        let _ = self.current_thumbnail_to_thumbnail_jpg().await;
+                                    }
+                                    Char('M') => {
+                                        self.i = jump(self.i, self.n / 2, self.col_width);
+                                        let _ = self.current_thumbnail_to_thumbnail_jpg().await;
+                                    }
                                     Char('G') | Char('L') => {
-                                        self.i = jump(self.i, self.n - 1, self.col_width)
+                                        self.i = jump(self.i, self.n - 1, self.col_width);
+                                        let _ = self.current_thumbnail_to_thumbnail_jpg().await;
                                     }
                                     Char('r') | Char('$') | Left => self.soft_reload(),
-                                    Char('P') => self.previous_page(),
-                                    Char('N') => self.next_page(),
+                                    Char('P') => {
+                                        self.previous_page();
+                                        let _ = self.current_thumbnail_to_thumbnail_jpg().await;
+                                    }
+                                    Char('N') => {
+                                        self.next_page();
+                                        let _ = self.current_thumbnail_to_thumbnail_jpg().await;
+                                    }
                                     Char('R') => self.hard_reload().await,
                                     Char('h') | Char('?') => self.help(),
                                     Char('i') | Right => self.info(),

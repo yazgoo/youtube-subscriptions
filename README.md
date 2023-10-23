@@ -78,20 +78,21 @@ example:
 
 ```
 
-| field            | description                                                                                         | default value
-| ------           | -----------                                                                                         | -------------
-| video_path       | directory where videos will be stored                                                               | `/tmp`
-| cache_path       | file path where video list will be stored                                                           | `/tmp/yts.json`
-| blockish_player  | [blockish player](https://github.com/yazgoo/blockish-player) to use (supersedes players)            | None
-| players          | list of players command for videos in order of priority                                             |
-| youtubedl_format | see [youtube-dl doc](https://github.com/ytdl-org/youtube-dl/blob/master/README.md#format-selection) | `[height <=? 360][ext = mp4]`
-| video_extension  | youtube-dl video extension as per format                                                            | `mp4`
-| kind_symbols     | hash of characters to describe the media                                                            | `{ "Audio": "a", "Video": "v", "Magnet": "m", "Other": "o"  }`
-| channel_ids      | list of additional channel ids which will be also fetched                                           | `[]`
-| channel_urls     | list of additional channel urls which will be also fetched (can be used for peertube)                                           | `[]`
-| mpv_mode         | try and start mpv to play the youtubee video first                                                  | `true`
-| mpv_path         | path to mpv binary (will be use if mpv_mode is true)                                                | `/usr/bin/mpv`
-| open_magnet      | tool to use to open magnet links (e.g. transmission-remote-cli                                      | None
+| field               | description                                                                                         | default value
+| ------              | -----------                                                                                         | -------------
+| video_path          | directory where videos will be stored                                                               | `/tmp`
+| cache_path          | file path where video list will be stored                                                           | `/tmp/yts.json`
+| blockish_player     | [blockish player](https://github.com/yazgoo/blockish-player) to use (supersedes players)            | None
+| players             | list of players command for videos in order of priority                                             |
+| youtubedl_format    | see [youtube-dl doc](https://github.com/ytdl-org/youtube-dl/blob/master/README.md#format-selection) | `[height <=? 360][ext = mp4]`
+| video_extension     | youtube-dl video extension as per format                                                            | `mp4`
+| kind_symbols        | hash of characters to describe the media                                                            | `{ "Audio": "a", "Video": "v", "Magnet": "m", "Other": "o"  }`
+| channel_ids         | list of additional channel ids which will be also fetched                                           | `[]`
+| channel_urls        | list of additional channel urls which will be also fetched (can be used for peertube)               | `[]`
+| mpv_mode            | try and start mpv to play the youtubee video first                                                  | `true`
+| mpv_path            | path to mpv binary (will be use if mpv_mode is true)                                                | `/usr/bin/mpv`
+| open_magnet         | tool to use to open magnet links (e.g. transmission-remote-cli                                      | None
+| auto_thumbnail_path | file path to write thumbnails to when cursor is moved                                               | None
 
 `__HOME` will be substituted with the home path.
 
