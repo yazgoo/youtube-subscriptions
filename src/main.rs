@@ -32,7 +32,7 @@ use std::io;
 use std::io::ErrorKind::NotFound;
 use std::io::{BufReader, Read, Write};
 use std::process::{Command, Stdio};
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 use utf8::BufReadDecoder;
 
 #[derive(Debug)]
@@ -183,39 +183,8 @@ fn subscriptions_url() -> &'static str {
     "https://www.youtube.com/subscription_manager?action_takeout=1"
 }
 
-fn download_subscriptions() {
-    let _res = webbrowser::open(&subscriptions_url());
-    debug(&format!(
-        "please save file to ~/{}",
-        subscription_manager_relative_path()
-    ));
-}
-
 fn subscription_manager_relative_path() -> &'static str {
     ".config/youtube-subscriptions/subscription_manager"
-}
-
-fn get_subscriptions_xml() -> Result<String, std::io::Error> {
-    match dirs::home_dir() {
-        Some(home) => match home.to_str() {
-            Some(s) => {
-                let path = format!("{}/{}", s, subscription_manager_relative_path());
-                if fs::metadata(&path).is_ok() {
-                    fs::read_to_string(path)
-                } else {
-                    Ok("<opml></opml>".to_string())
-                }
-            }
-            None => {
-                debug("failed conversting home to str");
-                Ok("<opml></opml>".to_string())
-            }
-        },
-        None => {
-            debug("failed finding home dir");
-            Ok("<opml></opml>".to_string())
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -332,29 +301,6 @@ fn entry_to_item_rss(title: &String, channel_url: &str, entry: roxmltree::Node) 
     }
 }
 
-fn get_title(document: &roxmltree::Document) -> String {
-    match document
-        .descendants()
-        .find(|n| n.tag_name().name() == "title")
-    {
-        Some(node) => node.text().unwrap_or(""),
-        None => {
-            debug("did not find title node");
-            ""
-        }
-    }
-    .to_string()
-}
-
-fn get_rss_videos(document: roxmltree::Document, channel_url: &str) -> Vec<Item> {
-    let title = get_title(&document);
-    document
-        .descendants()
-        .filter(|n| n.tag_name().name() == "entry")
-        .map(|entry| entry_to_item_rss(&title, channel_url, entry))
-        .collect::<Vec<Item>>()
-}
-
 fn entry_to_item_atom(title: &str, channel_url: &str, entry: roxmltree::Node) -> Item {
     let mut kind = ItemKind::Other;
     let url = get_decendant_node!(entry, "enclosure")
@@ -397,31 +343,6 @@ fn entry_to_item_atom(title: &str, channel_url: &str, entry: roxmltree::Node) ->
         thumbnail: thumbnail.to_string(),
         flag: default_flag(),
         channel_url: channel_url.to_string(),
-    }
-}
-
-fn get_atom_videos(channel: roxmltree::Node, channel_url: &String) -> Vec<Item> {
-    let title = get_decendant_node!(channel, "title").text().unwrap_or("");
-    channel
-        .descendants()
-        .filter(|n| n.tag_name().name() == "item")
-        .map(|entry| entry_to_item_atom(&title, channel_url, entry))
-        .collect::<Vec<Item>>()
-}
-
-fn get_channel_videos_from_contents(contents: &str, channel_url: &String) -> Vec<Item> {
-    match roxmltree::Document::parse(contents) {
-        Ok(document) => match document
-            .descendants()
-            .find(|n| n.tag_name().name() == "channel")
-        {
-            Some(channel) => get_atom_videos(channel, &channel_url),
-            None => get_rss_videos(document, &channel_url),
-        },
-        Err(e) => {
-            debug(&format!("failed parsing xml {}", e));
-            vec![]
-        }
     }
 }
 
@@ -513,109 +434,6 @@ fn build_request(
     }
 }
 
-async fn get_channel_videos(
-    client: &reqwest::Client,
-    channel_url: String,
-    channel_etag: Option<&String>,
-    original_videos: &Items,
-) -> Option<ChanelItems> {
-    let max_tries = 5;
-    for i in 0..max_tries {
-        let request = build_request(&channel_url, &client, channel_etag);
-        let wrapped_response = request.send().await;
-        match wrapped_response {
-            Ok(response) => {
-                let status = response.status();
-                if status.as_u16() == 304 {
-                    return get_original_channel_videos(
-                        &channel_url,
-                        &channel_etag,
-                        &original_videos,
-                    );
-                } else if status.is_success() {
-                    let headers = response.headers();
-                    let etag_opt_opt = headers
-                        .get(ETAG)
-                        .map(|x| x.to_str().ok().map(|y| y.to_string()));
-                    match response.text().await {
-                        Ok(text) => {
-                            return Some(ChanelItems {
-                                channel_url: channel_url.to_string(),
-                                etag: match etag_opt_opt {
-                                    Some(Some(x)) => Some(x),
-                                    _ => None,
-                                },
-                                videos: get_channel_videos_from_contents(&text, &channel_url),
-                            })
-                        }
-                        Err(_) => {}
-                    }
-                }
-            }
-            Err(_e) if i == (max_tries - 1) => {
-                debug(&format!("failed loading {}: {}", &channel_url, _e))
-            }
-            Err(e) => debug(&format!(
-                "retrying after fail #{} for {}: {:?}",
-                i,
-                &channel_url,
-                e.status()
-            )),
-        }
-        let dur = std::time::Duration::from_secs(i);
-        std::thread::sleep(dur);
-    }
-    None
-}
-
-async fn get_videos(
-    xml: String,
-    additional_channel_ids: &[String],
-    additional_channel_urls: &[String],
-    original_videos: &Items,
-) -> Vec<Option<ChanelItems>> {
-    match roxmltree::Document::parse(xml.as_str()) {
-        Ok(document) => {
-            let mut urls_from_xml: Vec<String> = document
-                .descendants()
-                .filter(|n| n.tag_name().name() == "outline")
-                .map(|entry| entry.attribute("xmlUrl"))
-                .filter_map(|x| x)
-                .map(|x| x.to_string())
-                .collect::<Vec<String>>();
-            let urls_from_additional = additional_channel_ids
-                .iter()
-                .map(|id| "https://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id);
-            let urls_from_additional_2 = additional_channel_urls.iter().map(|url| url.to_string());
-            urls_from_xml.extend(urls_from_additional);
-            urls_from_xml.extend(urls_from_additional_2);
-            match reqwest::Client::builder().use_rustls_tls().build() {
-                Ok(client) => {
-                    let futs: Vec<_> = urls_from_xml
-                        .iter()
-                        .map(|url| {
-                            let etag = match original_videos.channel_etags.get(&url.to_string()) {
-                                Some(Some(string)) => Some(string),
-                                _ => None,
-                            };
-                            get_channel_videos(&client, url.to_string(), etag, &original_videos)
-                        })
-                        .collect();
-                    join_all(futs).await
-                }
-                Err(e) => {
-                    debug(&format!("failed instantiating client {}", e));
-                    vec![None]
-                }
-            }
-        }
-        Err(e) => {
-            debug(&format!("failed parsing xml {}", e));
-            vec![None]
-        }
-    }
-}
-
 fn to_show_videos(
     app_config: &AppConfig,
     videos: &mut Vec<Item>,
@@ -643,84 +461,6 @@ fn replace_home(path: &String) -> String {
     let home = dirs::home_dir().expect("home dir");
     let path = path.as_str();
     path.replace("__HOME", home.to_str().expect("home as str"))
-}
-
-fn save_videos(app_config: &AppConfig, videos: &Items) {
-    let proper_path = replace_home(&app_config.cache_path);
-    match serde_json::to_string(&videos) {
-        Ok(serialized) => match fs::write(&proper_path, serialized) {
-            Ok(_) => {}
-            Err(e) => {
-                debug(&format!("failed writing {} {}", &proper_path, e));
-            }
-        },
-        Err(e) => {
-            debug(&format!("failed serializing videos {}", e));
-        }
-    }
-}
-
-async fn load(reload: bool, app_config: &AppConfig, original_videos: &Items) -> Option<Items> {
-    match get_subscriptions_xml() {
-        Ok(xml) => {
-            let path = replace_home(&app_config.cache_path);
-            if reload || fs::metadata(&path).is_err() {
-                let mut one_query_failed = false;
-                let empty_vec = vec![];
-                let mut etags: ChannelEtags = HashMap::new();
-                let vids = get_videos(
-                    xml,
-                    &app_config.channel_ids,
-                    &app_config.channel_urls,
-                    &original_videos,
-                )
-                .await
-                .iter()
-                .map(|x| match x.as_ref() {
-                    Some(res) => {
-                        etags.insert(res.channel_url.clone(), res.etag.clone());
-                        &res.videos
-                    }
-                    None => {
-                        one_query_failed = true;
-                        &empty_vec
-                    }
-                })
-                .flat_map(|x| x)
-                .cloned()
-                .collect::<Vec<Item>>();
-                if one_query_failed {
-                    return None;
-                }
-                let mut videos = Items {
-                    channel_etags: etags,
-                    videos: vids,
-                };
-
-                for vid in videos.videos.iter_mut() {
-                    for original_vid in original_videos.videos.iter() {
-                        if vid.url == original_vid.url {
-                            vid.flag = original_vid.flag.clone();
-                        }
-                    }
-                }
-                save_videos(app_config, &videos);
-                Some(videos)
-            } else {
-                match fs::read_to_string(&path) {
-                    Ok(s) => match serde_json::from_str(s.as_str()) {
-                        Ok(res) => Some(res),
-                        Err(e) => {
-                            debug(&format!("failed reading {} {}", path, e));
-                            None
-                        }
-                    },
-                    Err(_) => None,
-                }
-            }
-        }
-        Err(_) => None,
-    }
 }
 
 fn get_lines() -> usize {
@@ -789,14 +529,6 @@ fn clear_to_end_of_line() {
     flush_stdout();
 }
 
-fn debug(s: &str) {
-    move_to_bottom();
-    clear_to_end_of_line();
-    move_to_bottom();
-    print!("{}", s);
-    flush_stdout();
-}
-
 fn print_selector(i: usize, col_width: usize) {
     move_cursor(i, 0);
     print!("\x1b[1m|\x1b[0m\r");
@@ -825,6 +557,8 @@ fn pause() {
 }
 
 struct YoutubeSubscribtions {
+    modified: SystemTime,
+    background_mode: bool,
     col_width: usize,
     n: usize,
     start: usize,
@@ -840,171 +574,6 @@ struct YoutubeSubscribtions {
 fn print_press_any_key_and_pause() {
     println!("press any key to continue...");
     pause();
-}
-
-fn read_command_output(command: &mut Command, binary: &str) {
-    match command.stdout(Stdio::piped()).spawn() {
-        Ok(mut child) => {
-            let stdout_option = child.stdout.take();
-            match stdout_option {
-                Some(stdout) => {
-                    let mut decoder = BufReadDecoder::new(BufReader::new(stdout));
-                    loop {
-                        let read_result = decoder.next_strict();
-                        match read_result {
-                            Some(Ok(s)) => {
-                                print!("{}", s);
-                            }
-                            Some(Err(_)) => {}
-                            None => {
-                                break;
-                            }
-                        }
-                    }
-                }
-                None => debug("no stdout"),
-            }
-            let stderr_option = child.stderr.take();
-            match stderr_option {
-                Some(stderr) => {
-                    for byte_result in stderr.bytes() {
-                        match byte_result {
-                            Ok(byte) => {
-                                print!("{}", byte as char);
-                                flush_stdout();
-                            }
-                            Err(_) => {}
-                        }
-                    }
-                }
-                None => debug("no stderr"),
-            }
-            match child.wait() {
-                Ok(status) => {
-                    if !status.success() {
-                        println!(
-                            "error while running {:?}, return status: {:?}",
-                            command,
-                            status.code()
-                        );
-                        print_press_any_key_and_pause()
-                    }
-                }
-                Err(e) => {
-                    println!("error while running {:?}, error: {:?}", command, e);
-                    print_press_any_key_and_pause()
-                }
-            }
-        }
-        Err(e) => {
-            if let NotFound = e.kind() {
-                println!("`{}` was not found: maybe you should install it ?", binary)
-            } else {
-                println!("error while runnnig {} : {}", binary, e);
-            }
-            print_press_any_key_and_pause()
-        }
-    }
-}
-
-fn play_video_usual(path: &str, app_config: &AppConfig) {
-    for player in &app_config.players {
-        if fs::metadata(&player[0]).is_ok() {
-            let mut child1 = Command::new(&player[0]);
-            for arg in player.iter().skip(1) {
-                child1.arg(&arg);
-            }
-            read_command_output(child1.arg(path), &player[0]);
-            return;
-        }
-    }
-}
-
-fn play_video(path: &str, app_config: &AppConfig) {
-    match &app_config.blockish_player {
-        None => play_video_usual(&path, &app_config),
-        Some(player) => {
-            match blockish_player::video_command(player, &path.to_string()) {
-                Ok(mut command) => {
-                    read_command_output(&mut command, &"blockish_player".to_string());
-                }
-                Err(e) => {
-                    debug(&format!("error: {:?}", e));
-                    play_video_usual(&path, &app_config);
-                }
-            };
-        }
-    }
-}
-
-fn download_video(path: &str, id: &str, app_config: &AppConfig) {
-    if fs::metadata(&path).is_err() {
-        read_command_output(
-            Command::new("youtube-dl")
-                .arg("-f")
-                .arg(&app_config.youtubedl_format)
-                .arg("-o")
-                .arg(&path)
-                .arg("--")
-                .arg(&id),
-            &"youtube-dl".to_string(),
-        )
-    }
-}
-
-fn open_magnet(url: &str, app_config: &AppConfig) {
-    match &app_config.open_magnet {
-        Some(open_magnet) => read_command_output(Command::new(open_magnet).arg(&url), &open_magnet),
-        None => {}
-    }
-}
-
-fn play_url(url: &String, kind: &ItemKind, app_config: &AppConfig, no_video: bool) {
-    if app_config.mpv_mode && fs::metadata(&app_config.mpv_path).is_ok() {
-        let message = format!("playing {} with mpv...", url);
-        debug(&message);
-        match Command::new(&app_config.mpv_path)
-            .args(&app_config.player_additional_opts)
-            .arg(if no_video { "--no-video" } else { "" })
-            .arg(if app_config.fs { "-fs" } else { "" })
-            .arg("-really-quiet")
-            .arg("--ytdl-format=".to_owned() + &app_config.youtubedl_format)
-            .arg(&url)
-            .spawn()
-        {
-            Ok(mut child) => match child.wait() {
-                Ok(_) => {}
-                Err(e) => {
-                    debug(&format!("{}", e));
-                }
-            },
-            _ => {}
-        };
-    } else {
-        clear();
-        match kind {
-            ItemKind::Audio => {
-                play_video(&url, app_config);
-            }
-            ItemKind::Magnet => {
-                open_magnet(&url, app_config);
-            }
-            _ => {
-                let path = format!(
-                    "{}/{}.{}",
-                    app_config.video_path,
-                    base64::encode(&url),
-                    app_config.video_extension
-                );
-                download_video(&path, &url, app_config);
-                play_video(&path, app_config);
-            }
-        }
-    }
-}
-
-fn play(v: &Item, app_config: &AppConfig, no_video: bool) {
-    play_url(&v.url, &v.kind, app_config, no_video);
 }
 
 fn print_help() {
@@ -1215,6 +784,414 @@ impl YoutubeSubscribtions {
         self.print_videos()
     }
 
+    fn download_subscriptions(&self) {
+        let _res = webbrowser::open(&subscriptions_url());
+        self.debug(&format!(
+            "please save file to ~/{}",
+            subscription_manager_relative_path()
+        ));
+    }
+
+    fn get_subscriptions_xml(&self) -> Result<String, std::io::Error> {
+        match dirs::home_dir() {
+            Some(home) => match home.to_str() {
+                Some(s) => {
+                    let path = format!("{}/{}", s, subscription_manager_relative_path());
+                    if fs::metadata(&path).is_ok() {
+                        fs::read_to_string(path)
+                    } else {
+                        Ok("<opml></opml>".to_string())
+                    }
+                }
+                None => {
+                    self.debug("failed conversting home to str");
+                    Ok("<opml></opml>".to_string())
+                }
+            },
+            None => {
+                self.debug("failed finding home dir");
+                Ok("<opml></opml>".to_string())
+            }
+        }
+    }
+
+    fn get_title(&self, document: &roxmltree::Document) -> String {
+        match document
+            .descendants()
+            .find(|n| n.tag_name().name() == "title")
+        {
+            Some(node) => node.text().unwrap_or(""),
+            None => {
+                self.debug("did not find title node");
+                ""
+            }
+        }
+        .to_string()
+    }
+
+    fn get_rss_videos(&self, document: roxmltree::Document, channel_url: &str) -> Vec<Item> {
+        let title = self.get_title(&document);
+        document
+            .descendants()
+            .filter(|n| n.tag_name().name() == "entry")
+            .map(|entry| entry_to_item_rss(&title, channel_url, entry))
+            .collect::<Vec<Item>>()
+    }
+
+    fn get_channel_videos_from_contents(&self, contents: &str, channel_url: &String) -> Vec<Item> {
+        match roxmltree::Document::parse(contents) {
+            Ok(document) => match document
+                .descendants()
+                .find(|n| n.tag_name().name() == "channel")
+            {
+                Some(channel) => self.get_atom_videos(channel, &channel_url),
+                None => self.get_rss_videos(document, &channel_url),
+            },
+            Err(e) => {
+                self.debug(&format!("failed parsing xml {}", e));
+                vec![]
+            }
+        }
+    }
+
+    fn get_atom_videos(&self, channel: roxmltree::Node, channel_url: &String) -> Vec<Item> {
+        let title = get_decendant_node!(channel, "title").text().unwrap_or("");
+        channel
+            .descendants()
+            .filter(|n| n.tag_name().name() == "item")
+            .map(|entry| entry_to_item_atom(&title, channel_url, entry))
+            .collect::<Vec<Item>>()
+    }
+
+    async fn get_videos(
+        &self,
+        xml: String,
+        additional_channel_ids: &[String],
+        additional_channel_urls: &[String],
+        original_videos: &Items,
+    ) -> Vec<Option<ChanelItems>> {
+        match roxmltree::Document::parse(xml.as_str()) {
+            Ok(document) => {
+                let mut urls_from_xml: Vec<String> = document
+                    .descendants()
+                    .filter(|n| n.tag_name().name() == "outline")
+                    .map(|entry| entry.attribute("xmlUrl"))
+                    .filter_map(|x| x)
+                    .map(|x| x.to_string())
+                    .collect::<Vec<String>>();
+                let urls_from_additional = additional_channel_ids.iter().map(|id| {
+                    "https://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id
+                });
+                let urls_from_additional_2 =
+                    additional_channel_urls.iter().map(|url| url.to_string());
+                urls_from_xml.extend(urls_from_additional);
+                urls_from_xml.extend(urls_from_additional_2);
+                match reqwest::Client::builder().use_rustls_tls().build() {
+                    Ok(client) => {
+                        let futs: Vec<_> = urls_from_xml
+                            .iter()
+                            .map(|url| {
+                                let etag = match original_videos.channel_etags.get(&url.to_string())
+                                {
+                                    Some(Some(string)) => Some(string),
+                                    _ => None,
+                                };
+                                self.get_channel_videos(
+                                    &client,
+                                    url.to_string(),
+                                    etag,
+                                    &original_videos,
+                                )
+                            })
+                            .collect();
+                        join_all(futs).await
+                    }
+                    Err(e) => {
+                        self.debug(&format!("failed instantiating client {}", e));
+                        vec![None]
+                    }
+                }
+            }
+            Err(e) => {
+                self.debug(&format!("failed parsing xml {}", e));
+                vec![None]
+            }
+        }
+    }
+
+    async fn get_channel_videos(
+        &self,
+        client: &reqwest::Client,
+        channel_url: String,
+        channel_etag: Option<&String>,
+        original_videos: &Items,
+    ) -> Option<ChanelItems> {
+        let max_tries = 5;
+        for i in 0..max_tries {
+            let request = build_request(&channel_url, &client, channel_etag);
+            let wrapped_response: Result<reqwest::Response, reqwest::Error> = request.send().await;
+            match wrapped_response {
+                Ok(response) => {
+                    let status = response.status();
+                    if status.as_u16() == 304 {
+                        return get_original_channel_videos(
+                            &channel_url,
+                            &channel_etag,
+                            &original_videos,
+                        );
+                    } else if status.is_success() {
+                        self.debug(&format!("💚 success loading {}", &channel_url));
+                        let headers = response.headers();
+                        let etag_opt_opt = headers
+                            .get(ETAG)
+                            .map(|x| x.to_str().ok().map(|y| y.to_string()));
+                        match response.text().await {
+                            Ok(text) => {
+                                return Some(ChanelItems {
+                                    channel_url: channel_url.to_string(),
+                                    etag: match etag_opt_opt {
+                                        Some(Some(x)) => Some(x),
+                                        _ => None,
+                                    },
+                                    videos: self
+                                        .get_channel_videos_from_contents(&text, &channel_url),
+                                })
+                            }
+                            Err(_) => {}
+                        }
+                    }
+                }
+                Err(e) if i == (max_tries - 1) => {
+                    self.debug(&format!("🔴 failed loading {}: {}", &channel_url, e))
+                }
+                Err(e) => self.debug(&format!(
+                    "🟠 retrying after fail #{} for {}: {:?}",
+                    i,
+                    &channel_url,
+                    e.status()
+                )),
+            }
+            let dur = std::time::Duration::from_millis(i * 100);
+            std::thread::sleep(dur);
+        }
+        None
+    }
+
+    async fn load(
+        &self,
+        reload: bool,
+        app_config: &AppConfig,
+        original_videos: &Items,
+    ) -> Option<Items> {
+        match self.get_subscriptions_xml() {
+            Ok(xml) => {
+                let path = replace_home(&app_config.cache_path);
+                if reload || fs::metadata(&path).is_err() {
+                    let mut one_query_failed = false;
+                    let empty_vec = vec![];
+                    let mut etags: ChannelEtags = HashMap::new();
+                    let vids = self
+                        .get_videos(
+                            xml,
+                            &app_config.channel_ids,
+                            &app_config.channel_urls,
+                            &original_videos,
+                        )
+                        .await
+                        .iter()
+                        .map(|x| match x.as_ref() {
+                            Some(res) => {
+                                etags.insert(res.channel_url.clone(), res.etag.clone());
+                                &res.videos
+                            }
+                            None => {
+                                one_query_failed = true;
+                                &empty_vec
+                            }
+                        })
+                        .flat_map(|x| x)
+                        .cloned()
+                        .collect::<Vec<Item>>();
+                    if one_query_failed {
+                        return None;
+                    }
+                    let mut videos = Items {
+                        channel_etags: etags,
+                        videos: vids,
+                    };
+
+                    for vid in videos.videos.iter_mut() {
+                        for original_vid in original_videos.videos.iter() {
+                            if vid.url == original_vid.url {
+                                vid.flag = original_vid.flag.clone();
+                            }
+                        }
+                    }
+                    self.save_videos(app_config, &videos);
+                    Some(videos)
+                } else {
+                    match fs::read_to_string(&path) {
+                        Ok(s) => match serde_json::from_str(s.as_str()) {
+                            Ok(res) => Some(res),
+                            Err(e) => {
+                                self.debug(&format!("failed reading {} {}", path, e));
+                                None
+                            }
+                        },
+                        Err(_) => None,
+                    }
+                }
+            }
+            Err(_) => None,
+        }
+    }
+
+    fn save_videos(&self, app_config: &AppConfig, videos: &Items) {
+        let proper_path = replace_home(&app_config.cache_path);
+        match serde_json::to_string(&videos) {
+            Ok(serialized) => match fs::write(&proper_path, serialized) {
+                Ok(_) => {}
+                Err(e) => {
+                    self.debug(&format!("failed writing {} {}", &proper_path, e));
+                }
+            },
+            Err(e) => {
+                self.debug(&format!("failed serializing videos {}", e));
+            }
+        }
+    }
+
+    fn play_video_usual(&self, path: &str, app_config: &AppConfig) {
+        for player in &app_config.players {
+            if fs::metadata(&player[0]).is_ok() {
+                let mut child1 = Command::new(&player[0]);
+                for arg in player.iter().skip(1) {
+                    child1.arg(&arg);
+                }
+                self.read_command_output(child1.arg(path), &player[0]);
+                return;
+            }
+        }
+    }
+
+    fn play_video(&self, path: &str, app_config: &AppConfig) {
+        match &app_config.blockish_player {
+            None => self.play_video_usual(&path, &app_config),
+            Some(player) => {
+                match blockish_player::video_command(player, &path.to_string()) {
+                    Ok(mut command) => {
+                        self.read_command_output(&mut command, &"blockish_player".to_string());
+                    }
+                    Err(e) => {
+                        self.debug(&format!("error: {:?}", e));
+                        self.play_video_usual(&path, &app_config);
+                    }
+                };
+            }
+        }
+    }
+
+    fn download_video(&self, path: &str, id: &str, app_config: &AppConfig) {
+        if fs::metadata(&path).is_err() {
+            self.read_command_output(
+                Command::new("youtube-dl")
+                    .arg("-f")
+                    .arg(&app_config.youtubedl_format)
+                    .arg("-o")
+                    .arg(&path)
+                    .arg("--")
+                    .arg(&id),
+                &"youtube-dl".to_string(),
+            )
+        }
+    }
+
+    fn open_magnet(&self, url: &str, app_config: &AppConfig) {
+        match &app_config.open_magnet {
+            Some(open_magnet) => {
+                self.read_command_output(Command::new(open_magnet).arg(&url), &open_magnet)
+            }
+            None => {}
+        }
+    }
+
+    fn read_command_output(&self, command: &mut Command, binary: &str) {
+        match command.stdout(Stdio::piped()).spawn() {
+            Ok(mut child) => {
+                let stdout_option = child.stdout.take();
+                match stdout_option {
+                    Some(stdout) => {
+                        let mut decoder = BufReadDecoder::new(BufReader::new(stdout));
+                        loop {
+                            let read_result = decoder.next_strict();
+                            match read_result {
+                                Some(Ok(s)) => {
+                                    print!("{}", s);
+                                }
+                                Some(Err(_)) => {}
+                                None => {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    None => self.debug("no stdout"),
+                }
+                let stderr_option = child.stderr.take();
+                match stderr_option {
+                    Some(stderr) => {
+                        for byte_result in stderr.bytes() {
+                            match byte_result {
+                                Ok(byte) => {
+                                    print!("{}", byte as char);
+                                    flush_stdout();
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                    }
+                    None => self.debug("no stderr"),
+                }
+                match child.wait() {
+                    Ok(status) => {
+                        if !status.success() {
+                            println!(
+                                "error while running {:?}, return status: {:?}",
+                                command,
+                                status.code()
+                            );
+                            print_press_any_key_and_pause()
+                        }
+                    }
+                    Err(e) => {
+                        println!("error while running {:?}, error: {:?}", command, e);
+                        print_press_any_key_and_pause()
+                    }
+                }
+            }
+            Err(e) => {
+                if let NotFound = e.kind() {
+                    println!("`{}` was not found: maybe you should install it ?", binary)
+                } else {
+                    println!("error while runnnig {} : {}", binary, e);
+                }
+                print_press_any_key_and_pause()
+            }
+        }
+    }
+
+    fn debug(&self, s: &str) {
+        if self.background_mode {
+            println!("{}", s);
+        } else {
+            move_to_bottom();
+            clear_to_end_of_line();
+            move_to_bottom();
+            print!("{}", s);
+            flush_stdout();
+        }
+    }
+
     fn move_page(&mut self, direction: i8) {
         self.n = get_lines();
         if direction == 1 {
@@ -1249,20 +1226,40 @@ impl YoutubeSubscribtions {
         self.move_page(1);
     }
 
-    fn soft_reload(&mut self) {
+    fn cache_modified(&self) -> bool {
+        let path = replace_home(&self.app_config.cache_path);
+        match fs::metadata(&path) {
+            Ok(metadata) => {
+                let modified = metadata.modified().unwrap();
+                if self.modified < modified {
+                    true
+                } else {
+                    false
+                }
+            }
+            Err(_) => false,
+        }
+    }
+
+    async fn soft_reload(&mut self) {
+        if self.cache_modified() {
+            self.load_videos_from_cache().await;
+        }
         self.move_page(0);
     }
 
     async fn hard_reload(&mut self) {
         let now = Instant::now();
-        debug(&"updating video list...".to_string());
-        match load(true, &self.app_config, &self.videos).await {
+        self.debug(&"updating video list...".to_string());
+        match self.load(true, &self.app_config, &self.videos).await {
             Some(videos) => self.videos = videos,
-            None => debug("could not load videos"),
+            None => self.debug("could not load videos"),
         }
-        debug(&"".to_string());
-        self.soft_reload();
-        debug(&format!("reload took {} ms", now.elapsed().as_millis()).to_string());
+        self.debug(&"".to_string());
+        if !self.background_mode {
+            self.soft_reload().await;
+        }
+        self.debug(&format!("reload took {} ms", now.elapsed().as_millis()).to_string());
     }
 
     fn first_page(&mut self) {
@@ -1278,7 +1275,7 @@ impl YoutubeSubscribtions {
 
     fn play_current(&mut self, no_video: bool) {
         if self.i < self.toshow.len() {
-            play(&self.toshow[self.i], &self.app_config, no_video);
+            self.play(&self.toshow[self.i], &self.app_config, no_video);
             self.flag(&Some(Flag::Read));
             self.clear_and_print_videos();
         }
@@ -1338,7 +1335,7 @@ impl YoutubeSubscribtions {
     fn open_current(&mut self) {
         if self.i < self.toshow.len() {
             let url = &self.toshow[self.i].url;
-            debug(&format!("opening {}", &url));
+            self.debug(&format!("opening {}", &url));
             let _res = webbrowser::open(&url);
             self.flag(&Some(Flag::Read));
             self.clear_and_print_videos();
@@ -1406,7 +1403,7 @@ impl YoutubeSubscribtions {
                 self.search = regex;
                 self.i = self.find_next();
             }
-            Err(_) => debug("failing creating regex"),
+            Err(_) => self.debug("failing creating regex"),
         }
         self.clear_and_print_videos()
     }
@@ -1418,7 +1415,7 @@ impl YoutubeSubscribtions {
                 self.filter = regex;
                 self.move_page(0);
             }
-            Err(_) => debug("failing creating regex"),
+            Err(_) => self.debug("failing creating regex"),
         }
         self.clear_and_print_videos();
     }
@@ -1436,6 +1433,54 @@ impl YoutubeSubscribtions {
         }
     }
 
+    fn play(&self, v: &Item, app_config: &AppConfig, no_video: bool) {
+        self.play_url(&v.url, &v.kind, app_config, no_video);
+    }
+
+    fn play_url(&self, url: &String, kind: &ItemKind, app_config: &AppConfig, no_video: bool) {
+        if app_config.mpv_mode && fs::metadata(&app_config.mpv_path).is_ok() {
+            let message = format!("playing {} with mpv...", url);
+            self.debug(&message);
+            clear();
+            match Command::new(&app_config.mpv_path)
+                .args(&app_config.player_additional_opts)
+                .arg(if no_video { "--no-video" } else { "" })
+                .arg(if app_config.fs { "-fs" } else { "" })
+                .arg("--ytdl-format=".to_owned() + &app_config.youtubedl_format)
+                .arg(&url)
+                .spawn()
+            {
+                Ok(mut child) => match child.wait() {
+                    Ok(_) => {}
+                    Err(e) => {
+                        self.debug(&format!("{}", e));
+                    }
+                },
+                _ => {}
+            };
+        } else {
+            clear();
+            match kind {
+                ItemKind::Audio => {
+                    self.play_video(&url, app_config);
+                }
+                ItemKind::Magnet => {
+                    self.open_magnet(&url, app_config);
+                }
+                _ => {
+                    let path = format!(
+                        "{}/{}.{}",
+                        app_config.video_path,
+                        base64::encode(&url),
+                        app_config.video_extension
+                    );
+                    self.download_video(&path, &url, app_config);
+                    self.play_video(&path, app_config);
+                }
+            }
+        }
+    }
+
     fn command(&mut self) {
         let s = self.input_with_prefix(":");
         let s = s.split_whitespace().collect::<Vec<&str>>();
@@ -1443,7 +1488,7 @@ impl YoutubeSubscribtions {
         clear();
         if s.len() == 2 {
             if let "o" = s[0] {
-                play_url(&s[1].to_string(), &ItemKind::Video, &self.app_config, false)
+                self.play_url(&s[1].to_string(), &ItemKind::Video, &self.app_config, false)
             }
         }
         self.clear_and_print_videos()
@@ -1453,10 +1498,10 @@ impl YoutubeSubscribtions {
         let url = &self.toshow[self.i].url;
         match ClipboardContext::new() {
             Ok(mut ctx) => match ctx.set_contents(url.to_string()) {
-                Ok(_) => debug(&format!("yanked {}", url)),
-                Err(e) => debug(&format!("failed yanking {}: {}", url, e)),
+                Ok(_) => self.debug(&format!("yanked {}", url)),
+                Err(e) => self.debug(&format!("failed yanking {}: {}", url, e)),
             },
-            Err(e) => debug(&format!("error: {:?}", e)),
+            Err(e) => self.debug(&format!("error: {:?}", e)),
         }
     }
 
@@ -1481,7 +1526,7 @@ impl YoutubeSubscribtions {
                     vid.flag = flag.clone();
                 }
             }
-            save_videos(&self.app_config, &self.videos);
+            self.save_videos(&self.app_config, &self.videos);
         }
     }
 
@@ -1523,11 +1568,17 @@ impl YoutubeSubscribtions {
         }
     }
 
-    async fn run(&mut self) {
-        match load(false, &self.app_config, &self.videos).await {
-            Some(videos) => self.videos = videos,
-            None => debug("no video to load"),
+    async fn load_videos_from_cache(&mut self) {
+        match self.load(false, &self.app_config, &self.videos).await {
+            Some(videos) => {
+                self.videos = videos;
+                self.modified = SystemTime::now();
+            }
+            None => self.debug("no video to load"),
         };
+    }
+    async fn run(&mut self) {
+        self.load_videos_from_cache().await;
         self.start = 0;
         self.i = 0;
         smcup();
@@ -1576,7 +1627,7 @@ impl YoutubeSubscribtions {
                                         quit();
                                         quitting = true;
                                     }
-                                    Char('c') => download_subscriptions(),
+                                    Char('c') => self.download_subscriptions(),
                                     Char('j') | Char('l') | Down => {
                                         self.down();
                                         let _ = self.current_thumbnail_to_thumbnail_jpg().await;
@@ -1597,7 +1648,7 @@ impl YoutubeSubscribtions {
                                         self.i = jump(self.i, self.n - 1, self.col_width);
                                         let _ = self.current_thumbnail_to_thumbnail_jpg().await;
                                     }
-                                    Char('r') | Char('$') | Left => self.soft_reload(),
+                                    Char('r') | Char('$') | Left => self.soft_reload().await,
                                     Char('P') => {
                                         self.previous_page();
                                         let _ = self.current_thumbnail_to_thumbnail_jpg().await;
@@ -1612,7 +1663,7 @@ impl YoutubeSubscribtions {
                                     Char('t') => self.flag_unflag(),
                                     Char('T') => match self.display_current_thumbnail().await {
                                         Ok(_) => {}
-                                        Err(e) => debug(&format!("error: {:?}", e)),
+                                        Err(e) => self.debug(&format!("error: {:?}", e)),
                                     },
                                     Char('p') | KeyEvent::Enter => self.play_current(false),
                                     Char('a') => self.play_current(true),
@@ -1622,7 +1673,8 @@ impl YoutubeSubscribtions {
                                     Char(':') => self.command(),
                                     Char('y') => self.yank_video_uri(),
                                     Char('f') | Char('|') => self.filter(),
-                                    _ => debug(&"key not supported (press h for help)".to_string()),
+                                    _ => self
+                                        .debug(&"key not supported (press h for help)".to_string()),
                                 }
                                 numbers = vec![];
                             }
@@ -1662,6 +1714,8 @@ async fn main() {
         Ok(empty_regex) => {
             let empty_regex_2 = empty_regex.clone();
             let mut yts = YoutubeSubscribtions {
+                modified: SystemTime::now(),
+                background_mode: std::env::args().nth(1) == Some("--background".to_string()),
                 col_width: 0,
                 n: 0,
                 start: 0,
@@ -1676,7 +1730,12 @@ async fn main() {
                 app_config: load_config().expect("loaded config"),
                 filter_chars: vec![],
             };
-            yts.run().await;
+            if yts.background_mode {
+                println!("updating cache with new videos...");
+                yts.hard_reload().await;
+            } else {
+                yts.run().await;
+            }
         }
         Err(_) => println!("failed creating regex"),
     }

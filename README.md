@@ -44,6 +44,14 @@ copy all those id in channel_ids list (see configuration section)
 Create a configuration file (see configuration section)
 and add the channel urls you want to register to `channel_urls` list.
 
+# backround mode
+
+Sometimes reloading the video list can take a long time.
+
+To avoid blocking the main app, you can run the video reload in a separate process.
+
+Just run with `--background` flag (you can have it in a cron), and you can reload the main UI with `r`.
+
 # usage
 
 press h for help.
