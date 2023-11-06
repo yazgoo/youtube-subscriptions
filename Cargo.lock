@@ -2989,7 +2989,7 @@ checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
 
 [[package]]
 name = "youtube-subscriptions"
-version = "0.2.77"
+version = "0.2.78"
 dependencies = [
  "base64",
  "blockish",
