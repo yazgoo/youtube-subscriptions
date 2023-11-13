@@ -13,6 +13,7 @@ extern crate reqwest;
 extern crate roxmltree;
 extern crate serde;
 
+use base64::{engine::general_purpose, Engine as _};
 use blockish::render_image_fitting_terminal;
 use chrono::DateTime;
 use copypasta::{ClipboardContext, ClipboardProvider};
@@ -1311,7 +1312,7 @@ impl YoutubeSubscribtions {
         let path = format!(
             "{}/{}.{}",
             self.app_config.video_path,
-            base64::encode(&url),
+            general_purpose::STANDARD_NO_PAD.encode(&url),
             ".jpg"
         );
         if fs::metadata(&path).is_ok() {
@@ -1493,10 +1494,11 @@ impl YoutubeSubscribtions {
                     self.open_magnet(&url, app_config);
                 }
                 _ => {
+                    let bytes = general_purpose::STANDARD_NO_PAD.decode(&url).unwrap();
                     let path = format!(
                         "{}/{}.{}",
                         app_config.video_path,
-                        base64::encode(&url),
+                        std::str::from_utf8(&bytes).unwrap(),
                         app_config.video_extension
                     );
                     self.download_video(&path, &url, app_config);
