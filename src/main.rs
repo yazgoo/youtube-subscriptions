@@ -33,6 +33,7 @@ use std::io::ErrorKind::NotFound;
 use std::io::{BufReader, Read, Write};
 use std::process::{Command, Stdio};
 use std::time::{Instant, SystemTime};
+use tokio::sync::mpsc;
 use utf8::BufReadDecoder;
 
 #[derive(Debug)]
@@ -731,6 +732,32 @@ fn quit() {
     rmcup();
 }
 
+fn chinese_chars(string: &str) -> usize {
+    string.chars().fold(0, |acc, ch| {
+        acc + (
+            // Check if the character is a Chinese character
+            if ch >= '\u{4E00}' && ch <= '\u{9FFF}' {
+                1
+            } else {
+                0
+            }
+        )
+    })
+}
+
+fn count_chars(string: &str) -> usize {
+    string.chars().fold(0, |acc, ch| {
+        acc + (
+            // Check if the character is a Chinese character
+            if ch >= '\u{4E00}' && ch <= '\u{9FFF}' {
+                2
+            } else {
+                1
+            }
+        )
+    })
+}
+
 impl YoutubeSubscribtions {
     fn print_videos(&mut self) {
         let cols = get_cols();
@@ -738,7 +765,7 @@ impl YoutubeSubscribtions {
         let channel_max_size = cols / 3;
         let max = self.toshow.iter().fold(0, |acc, x| {
             std::cmp::max(
-                std::cmp::min(x.channel.chars().count(), channel_max_size),
+                std::cmp::min(count_chars(&x.channel), channel_max_size),
                 acc,
             )
         });
@@ -746,7 +773,7 @@ impl YoutubeSubscribtions {
         for video in &self.toshow {
             let published = video.published.split('T').collect::<Vec<&str>>();
             let whitespaces =
-                " ".repeat(max - std::cmp::min(video.channel.chars().count(), channel_max_size));
+                " ".repeat(max - std::cmp::min(count_chars(&video.channel), channel_max_size));
             let channel_short = video
                 .channel
                 .chars()
@@ -769,7 +796,7 @@ impl YoutubeSubscribtions {
             println!(
                 "{}",
                 s.chars()
-                    .take(min(s.chars().count(), cols - 4 + 9 + 9 + 1))
+                    .take(min(count_chars(&s), cols - chinese_chars(&s) - 4 + 9 + 9))
                     .collect::<String>()
             );
         }
@@ -1182,7 +1209,8 @@ impl YoutubeSubscribtions {
 
     fn debug(&self, s: &str) {
         if self.background_mode {
-            println!("{}", s);
+            let cols = get_cols();
+            println!("{}", s.chars().take(cols - 2).collect::<String>());
         } else {
             move_to_bottom();
             clear_to_end_of_line();
@@ -1256,9 +1284,6 @@ impl YoutubeSubscribtions {
             None => self.debug("could not load videos"),
         }
         self.debug(&"".to_string());
-        if !self.background_mode {
-            self.soft_reload().await;
-        }
         self.debug(&format!("reload took {} ms", now.elapsed().as_millis()).to_string());
     }
 
@@ -1577,7 +1602,7 @@ impl YoutubeSubscribtions {
             None => self.debug("no video to load"),
         };
     }
-    async fn run(&mut self) {
+    async fn run(&mut self, sender: mpsc::Sender<()>, mut receiver: mpsc::Receiver<()>) {
         self.load_videos_from_cache().await;
         self.start = 0;
         self.i = 0;
@@ -1587,6 +1612,10 @@ impl YoutubeSubscribtions {
         hide_cursor();
         let mut numbers: Vec<i64> = vec![];
         loop {
+            if let Ok(_) = receiver.try_recv() {
+                self.soft_reload().await;
+                self.debug(&"reload done".to_string());
+            }
             if self.videos.videos.len() == 0 {
                 self.help();
             }
@@ -1657,7 +1686,9 @@ impl YoutubeSubscribtions {
                                         self.next_page();
                                         let _ = self.current_thumbnail_to_thumbnail_jpg().await;
                                     }
-                                    Char('R') => self.hard_reload().await,
+                                    Char('R') => {
+                                        tokio::spawn(hard_reload_bg(sender.clone()));
+                                    }
                                     Char('h') | Char('?') => self.help(),
                                     Char('i') | Right => self.info(),
                                     Char('t') => self.flag_unflag(),
@@ -1704,39 +1735,43 @@ impl YoutubeSubscribtions {
     }
 }
 
+fn build_yts() -> YoutubeSubscribtions {
+    YoutubeSubscribtions {
+        modified: SystemTime::now(),
+        background_mode: false,
+        col_width: 0,
+        n: 0,
+        start: 0,
+        search: Regex::new("").unwrap(),
+        filter: Regex::new("").unwrap(),
+        i: 0,
+        toshow: vec![],
+        videos: Items {
+            channel_etags: HashMap::new(),
+            videos: vec![],
+        },
+        app_config: load_config().expect("loaded config"),
+        filter_chars: vec![],
+    }
+}
+
+async fn hard_reload_bg(sender: mpsc::Sender<()>) {
+    build_yts().hard_reload().await;
+    let _ = sender.send(()).await;
+}
+
 #[tokio::main]
 async fn main() {
     let _ = ctrlc::set_handler(move || {
         quit();
         std::process::exit(0);
     });
-    match Regex::new("") {
-        Ok(empty_regex) => {
-            let empty_regex_2 = empty_regex.clone();
-            let mut yts = YoutubeSubscribtions {
-                modified: SystemTime::now(),
-                background_mode: std::env::args().nth(1) == Some("--background".to_string()),
-                col_width: 0,
-                n: 0,
-                start: 0,
-                search: empty_regex,
-                filter: empty_regex_2,
-                i: 0,
-                toshow: vec![],
-                videos: Items {
-                    channel_etags: HashMap::new(),
-                    videos: vec![],
-                },
-                app_config: load_config().expect("loaded config"),
-                filter_chars: vec![],
-            };
-            if yts.background_mode {
-                println!("updating cache with new videos...");
-                yts.hard_reload().await;
-            } else {
-                yts.run().await;
-            }
-        }
-        Err(_) => println!("failed creating regex"),
+    let mut yts = build_yts();
+    if yts.background_mode {
+        println!("updating cache with new videos...");
+        yts.hard_reload().await;
+    } else {
+        let (sender, receiver) = mpsc::channel::<()>(1);
+        yts.run(sender, receiver).await;
     }
 }
