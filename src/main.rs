@@ -3,7 +3,7 @@ extern crate blockish;
 extern crate blockish_player;
 extern crate cfonts;
 extern crate chrono;
-extern crate copypasta;
+extern crate cli_clipboard;
 extern crate crossterm;
 extern crate crossterm_input;
 extern crate ctrlc;
@@ -18,7 +18,7 @@ use base64::{engine::general_purpose, Engine as _};
 use blockish::render_image_fitting_terminal;
 use cfonts::{render, Fonts, Options};
 use chrono::DateTime;
-use copypasta::{ClipboardContext, ClipboardProvider};
+use cli_clipboard::{ClipboardContext, ClipboardProvider};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm_input::KeyEvent::{self, Char, Ctrl, Down, Left, Right, Up};
 use crossterm_input::{input, InputEvent, MouseButton, MouseEvent, RawScreen};
@@ -679,11 +679,34 @@ fn count_chars(string: &str) -> usize {
     })
 }
 
+async fn write_thumbnail_i(url: &str, video_path: &str) -> Result<String, CustomError> {
+    let path = format!(
+        "{}/{}.{}",
+        video_path,
+        general_purpose::STANDARD_NO_PAD.encode(&url),
+        ".jpg"
+    );
+    if fs::metadata(&path).is_ok() {
+        return Ok(path);
+    }
+    let resp = reqwest::get(url).await?;
+    let mut out = File::create(&path)?;
+    let bytes = resp.bytes().await?;
+    out.write_all(&bytes[..])?;
+    Ok(path)
+}
+
+async fn render_thumbnail(url: String, p: String, pos: Option<(u32, u32)>) {
+    if let Ok(path) = write_thumbnail_i(&url, &p).await {
+        blockish::render_image(path.as_str(), (get_cols() * 8 / 2) as u32, pos)
+    }
+}
+
 impl YoutubeSubscribtions {
-    fn print_thumbnail(&mut self) {
+    fn print_thumbnail(&self) {
         if self.i < self.toshow.len() {
-            let i = self.i;
             move_cursor(0, 0);
+            let i = self.i;
             let channel = &self.toshow[i].channel;
             let output = render(Options {
                 text: String::from(channel),
@@ -695,11 +718,13 @@ impl YoutubeSubscribtions {
             }
             let title = &self.toshow[i].title;
             println!("{}", title);
-            if let Ok(path) = futures::executor::block_on(self.write_thumbnail(i)) {
-                blockish::render_image(path.as_str(), (get_cols() * 8 / 2) as u32)
-            }
+            let url = &self.toshow[i].thumbnail;
+            let p = &self.app_config.video_path;
+            let pos: (u32, u32) = (0, 10);
+            tokio::spawn(render_thumbnail(url.clone(), p.clone(), Some(pos)));
         }
     }
+
     fn print_videos(&mut self) {
         let (cols, start_col) = self.get_cols_and_start_col();
         let rows = get_lines();
@@ -987,9 +1012,6 @@ impl YoutubeSubscribtions {
                         .flat_map(|x| x)
                         .cloned()
                         .collect::<Vec<Item>>();
-                    if one_query_failed {
-                        return None;
-                    }
                     let mut videos = Items {
                         channel_etags: etags,
                         videos: vids,
@@ -1254,22 +1276,9 @@ impl YoutubeSubscribtions {
         }
     }
 
-    async fn write_thumbnail(&mut self, i: usize) -> Result<String, CustomError> {
+    async fn write_thumbnail(&self, i: usize) -> Result<String, CustomError> {
         let url = &self.toshow[i].thumbnail;
-        let path = format!(
-            "{}/{}.{}",
-            self.app_config.video_path,
-            general_purpose::STANDARD_NO_PAD.encode(&url),
-            ".jpg"
-        );
-        if fs::metadata(&path).is_ok() {
-            return Ok(path);
-        }
-        let resp = reqwest::get(url).await?;
-        let mut out = File::create(&path)?;
-        let bytes = resp.bytes().await?;
-        out.write_all(&bytes[..])?;
-        Ok(path)
+        write_thumbnail_i(url, &self.app_config.video_path).await
     }
 
     async fn display_current_thumbnail(&mut self) -> Result<(), CustomError> {
@@ -1496,8 +1505,8 @@ impl YoutubeSubscribtions {
         loop {
             let (cols, start_col) = self.get_cols_and_start_col();
             clear();
-            let lines = generate_lines(cols);
-            print_lines(start_col, &lines, i, rows);
+            let lines = generate_lines(cols - 1);
+            print_lines(start_col + 1, &lines, i, rows);
             if self.app_config.split_thumbnail {
                 self.print_thumbnail();
             }
