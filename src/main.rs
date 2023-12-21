@@ -1,8 +1,9 @@
 extern crate base64;
 extern crate blockish;
 extern crate blockish_player;
+extern crate cfonts;
 extern crate chrono;
-extern crate copypasta;
+extern crate cli_clipboard;
 extern crate crossterm;
 extern crate crossterm_input;
 extern crate ctrlc;
@@ -15,8 +16,9 @@ extern crate serde;
 
 use base64::{engine::general_purpose, Engine as _};
 use blockish::render_image_fitting_terminal;
+use cfonts::{render, Fonts, Options};
 use chrono::DateTime;
-use copypasta::{ClipboardContext, ClipboardProvider};
+use cli_clipboard::{ClipboardContext, ClipboardProvider};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm_input::KeyEvent::{self, Char, Ctrl, Down, Left, Right, Up};
 use crossterm_input::{input, InputEvent, MouseButton, MouseEvent, RawScreen};
@@ -87,6 +89,7 @@ struct AppConfig {
     open_magnet: Option<String>,
     sort: String,
     auto_thumbnail_path: Option<String>,
+    split_thumbnail: bool,
 }
 
 impl Default for AppConfig {
@@ -134,6 +137,7 @@ impl Default for AppConfig {
             open_magnet: None,
             sort: "desc".to_string(),
             auto_thumbnail_path: None,
+            split_thumbnail: false,
         }
     }
 }
@@ -531,27 +535,6 @@ fn clear_to_end_of_line() {
     flush_stdout();
 }
 
-fn print_selector(i: usize, col_width: usize) {
-    move_cursor(i, 0);
-    print!("\x1b[1m|\x1b[0m\r");
-    move_cursor(i, col_width);
-    print!("\x1b[1m|\x1b[0m\r");
-    flush_stdout();
-}
-
-fn clear_selector(i: usize, col_width: usize) {
-    move_cursor(i, 0);
-    print!(" ");
-    move_cursor(i, col_width);
-    print!(" ");
-    flush_stdout();
-}
-
-fn jump(i: usize, new_i: usize, col_width: usize) -> usize {
-    clear_selector(i, col_width);
-    new_i
-}
-
 fn pause() {
     let input = input();
     let _screen = RawScreen::into_raw_mode();
@@ -611,6 +594,7 @@ fn print_help() {
   T          display thumbnail
   y          copy video url in system clipboard
   c          download subscriptions default browser
+  s          enable thumbnail vertical split screen
   "
     )
 }
@@ -623,8 +607,7 @@ fn split_cols(string: &str, cols: usize) -> Vec<String> {
         .collect::<Vec<_>>()
 }
 
-fn info_lines(v: &Item) -> Vec<String> {
-    let cols = get_cols();
+fn info_lines(cols: usize, v: &Item) -> Vec<String> {
     let mut lines: Vec<String> = vec![];
     lines.push(format!("\x1b[34;1m{}\x1b[0m", v.title));
     lines.push("".to_string());
@@ -647,85 +630,22 @@ fn info_lines(v: &Item) -> Vec<String> {
     lines
 }
 
-fn print_tildeline() {
-    println!("\x1b[34;1m~\x1b[0m");
+fn print_tildeline(x: usize, y: usize) {
+    move_cursor(y, x);
+    print!("\x1b[34;1m~\x1b[0m");
 }
 
-fn print_lines(lines: &Vec<String>, start: usize, rows: usize) {
+fn print_lines(start_col: usize, lines: &Vec<String>, start: usize, rows: usize) {
     let stop = min(lines.len(), start + rows);
-    for (_, line) in lines[start..stop].iter().enumerate() {
-        println!("{}", line);
+    for (i, line) in lines[start..stop].iter().enumerate() {
+        move_cursor(i, start_col);
+        print!("{}", line);
     }
     if stop >= start {
-        for _ in (stop - start)..rows {
-            print_tildeline();
+        for k in (stop - start)..rows {
+            print_tildeline(start_col, k + start);
         }
     }
-}
-
-/* for this to work, each line should not be greater than the number of cols and there should not
- * be any line feed */
-fn less(lines: Vec<String>) {
-    let rows = get_lines();
-    let delta = rows / 2;
-    let mut i = 0;
-    loop {
-        clear();
-        print_lines(&lines, i, rows);
-        let input = input();
-        let result;
-        {
-            let _screen = RawScreen::into_raw_mode();
-            let mut stdin = input.read_sync();
-            result = stdin.next();
-        }
-        match result {
-            None => (),
-            Some(key_event) => match key_event {
-                InputEvent::Keyboard(event) => match event {
-                    Char('q') | Left => {
-                        break;
-                    }
-                    Char('g') => {
-                        i = 0;
-                    }
-                    Char('G') => {
-                        i = lines.len() - 1;
-                    }
-                    Char('k') | Up => {
-                        if i > 0 {
-                            i = i - 1
-                        };
-                    }
-                    Char('j') | Down => {
-                        if i < lines.len() {
-                            i = i + 1
-                        };
-                    }
-                    Ctrl('u') => {
-                        if i > delta {
-                            i = i - delta
-                        } else {
-                            i = 0
-                        };
-                    }
-                    Ctrl('d') => {
-                        if i + delta < lines.len() {
-                            i = i + delta
-                        } else {
-                            i = lines.len()
-                        };
-                    }
-                    _ => {}
-                },
-                _ => (),
-            },
-        }
-    }
-}
-
-fn print_info(v: &Item) {
-    less(info_lines(v));
 }
 
 fn quit() {
@@ -759,9 +679,54 @@ fn count_chars(string: &str) -> usize {
     })
 }
 
+async fn write_thumbnail_i(url: &str, video_path: &str) -> Result<String, CustomError> {
+    let path = format!(
+        "{}/{}.{}",
+        video_path,
+        general_purpose::STANDARD_NO_PAD.encode(&url),
+        ".jpg"
+    );
+    if fs::metadata(&path).is_ok() {
+        return Ok(path);
+    }
+    let resp = reqwest::get(url).await?;
+    let mut out = File::create(&path)?;
+    let bytes = resp.bytes().await?;
+    out.write_all(&bytes[..])?;
+    Ok(path)
+}
+
+async fn render_thumbnail(url: String, p: String, pos: Option<(u32, u32)>) {
+    if let Ok(path) = write_thumbnail_i(&url, &p).await {
+        blockish::render_image(path.as_str(), (get_cols() * 8 / 2) as u32, pos)
+    }
+}
+
 impl YoutubeSubscribtions {
+    fn print_thumbnail(&self) {
+        if self.i < self.toshow.len() {
+            move_cursor(0, 0);
+            let i = self.i;
+            let channel = &self.toshow[i].channel;
+            let output = render(Options {
+                text: String::from(channel),
+                font: Fonts::FontChrome,
+                ..Options::default()
+            });
+            for line in output.vec {
+                println!("{}", line);
+            }
+            let title = &self.toshow[i].title;
+            println!("{}", title);
+            let url = &self.toshow[i].thumbnail;
+            let p = &self.app_config.video_path;
+            let pos: (u32, u32) = (0, 10);
+            tokio::spawn(render_thumbnail(url.clone(), p.clone(), Some(pos)));
+        }
+    }
+
     fn print_videos(&mut self) {
-        let cols = get_cols();
+        let (cols, start_col) = self.get_cols_and_start_col();
         let rows = get_lines();
         let channel_max_size = cols / 3;
         let max = self.toshow.iter().fold(0, |acc, x| {
@@ -771,6 +736,7 @@ impl YoutubeSubscribtions {
             )
         });
         self.col_width = max + 11;
+        let mut i = 0;
         for video in &self.toshow {
             let published = video.published.split('T').collect::<Vec<&str>>();
             let whitespaces =
@@ -794,19 +760,25 @@ impl YoutubeSubscribtions {
                 whitespaces,
                 video.title
             );
-            println!(
+            move_cursor(i, start_col);
+            print!(
                 "{}",
                 s.chars()
                     .take(min(count_chars(&s), cols - chinese_chars(&s) - 4 + 9 + 9))
                     .collect::<String>()
             );
+            i += 1;
         }
         if self.toshow.len() < rows {
-            for _ in 0..(rows - self.toshow.len()) {
-                print_tildeline();
+            for k in 0..(rows - self.toshow.len()) {
+                print_tildeline(start_col, k);
             }
         }
+        if self.app_config.split_thumbnail {
+            self.print_thumbnail();
+        }
     }
+
     fn clear_and_print_videos(&mut self) {
         clear();
         self.print_videos()
@@ -1040,9 +1012,6 @@ impl YoutubeSubscribtions {
                         .flat_map(|x| x)
                         .cloned()
                         .collect::<Vec<Item>>();
-                    if one_query_failed {
-                        return None;
-                    }
                     let mut videos = Items {
                         channel_etags: etags,
                         videos: vids,
@@ -1307,22 +1276,9 @@ impl YoutubeSubscribtions {
         }
     }
 
-    async fn write_thumbnail(&mut self, i: usize) -> Result<String, CustomError> {
+    async fn write_thumbnail(&self, i: usize) -> Result<String, CustomError> {
         let url = &self.toshow[i].thumbnail;
-        let path = format!(
-            "{}/{}.{}",
-            self.app_config.video_path,
-            general_purpose::STANDARD_NO_PAD.encode(&url),
-            ".jpg"
-        );
-        if fs::metadata(&path).is_ok() {
-            return Ok(path);
-        }
-        let resp = reqwest::get(url).await?;
-        let mut out = File::create(&path)?;
-        let bytes = resp.bytes().await?;
-        out.write_all(&bytes[..])?;
-        Ok(path)
+        write_thumbnail_i(url, &self.app_config.video_path).await
     }
 
     async fn display_current_thumbnail(&mut self) -> Result<(), CustomError> {
@@ -1418,7 +1374,7 @@ impl YoutubeSubscribtions {
     }
 
     fn search_next(&mut self) {
-        clear_selector(self.i, self.col_width);
+        self.clear_selector(self.i, self.col_width);
         self.i = self.find_next();
     }
 
@@ -1537,10 +1493,101 @@ impl YoutubeSubscribtions {
         self.clear_and_print_videos()
     }
 
+    /* for this to work, each line should not be greater than the number of cols and there should not
+     * be any line feed */
+    fn less<F>(&mut self, generate_lines: F)
+    where
+        F: Fn(usize) -> Vec<String>,
+    {
+        let rows = get_lines();
+        let delta = rows / 2;
+        let mut i = 0;
+        loop {
+            let (cols, start_col) = self.get_cols_and_start_col();
+            clear();
+            let lines = generate_lines(cols - 1);
+            print_lines(start_col + 1, &lines, i, rows);
+            if self.app_config.split_thumbnail {
+                self.print_thumbnail();
+            }
+            let input = input();
+            let result;
+            {
+                let _screen = RawScreen::into_raw_mode();
+                let mut stdin = input.read_sync();
+                result = stdin.next();
+            }
+            match result {
+                None => (),
+                Some(key_event) => match key_event {
+                    InputEvent::Keyboard(event) => match event {
+                        Char('s') => {
+                            self.app_config.split_thumbnail = !self.app_config.split_thumbnail;
+                        }
+                        Char('q') | Left => {
+                            break;
+                        }
+                        Char('g') => {
+                            i = 0;
+                        }
+                        Char('G') => {
+                            i = lines.len() - 1;
+                        }
+                        Char('k') | Up => {
+                            if i > 0 {
+                                i = i - 1
+                            };
+                        }
+                        Char('j') | Down => {
+                            if i < lines.len() {
+                                i = i + 1
+                            };
+                        }
+                        Ctrl('u') => {
+                            if i > delta {
+                                i = i - delta
+                            } else {
+                                i = 0
+                            };
+                        }
+                        Ctrl('d') => {
+                            if i + delta < lines.len() {
+                                i = i + delta
+                            } else {
+                                i = lines.len()
+                            };
+                        }
+                        _ => {}
+                    },
+                    _ => (),
+                },
+            }
+        }
+    }
+
+    fn print_info(&mut self, v: &Item) {
+        self.less(|c| info_lines(c, v));
+    }
+
+    fn get_cols_and_start_col(&self) -> (usize, usize) {
+        let full_cols = get_cols();
+        let cols = if self.app_config.split_thumbnail {
+            full_cols / 2
+        } else {
+            full_cols
+        };
+        let start_col = if self.app_config.split_thumbnail {
+            cols
+        } else {
+            0
+        };
+        (cols, start_col)
+    }
+
     fn info(&mut self) {
         if self.i < self.toshow.len() {
             clear();
-            print_info(&self.toshow[self.i]);
+            self.print_info(&self.toshow[self.i].clone());
             self.clear_and_print_videos()
         }
     }
@@ -1574,16 +1621,17 @@ impl YoutubeSubscribtions {
         self.wait_key_press_and_clear_and_print_videos()
     }
 
+    fn jump(&mut self, new_i: usize) {
+        self.i = new_i;
+        self.clear_and_print_videos();
+    }
+
     fn up(&mut self) {
-        self.i = jump(
-            self.i,
-            if self.i > 0 { self.i - 1 } else { self.n - 1 },
-            self.col_width,
-        );
+        self.jump(if self.i > 0 { self.i - 1 } else { self.n - 1 });
     }
 
     fn down(&mut self) {
-        self.i = jump(self.i, self.i + 1, self.col_width);
+        self.jump(self.i + 1);
     }
 
     fn handle_resize(&mut self) {
@@ -1604,6 +1652,25 @@ impl YoutubeSubscribtions {
             None => self.debug("no video to load"),
         };
     }
+
+    fn clear_selector(&self, i: usize, col_width: usize) {
+        let (_, start_col) = self.get_cols_and_start_col();
+        move_cursor(i, start_col);
+        print!(" ");
+        move_cursor(i, col_width + start_col);
+        print!(" ");
+        flush_stdout();
+    }
+
+    fn print_selector(&self, i: usize, col_width: usize) {
+        let (_, start_col) = self.get_cols_and_start_col();
+        move_cursor(i, start_col);
+        print!("\x1b[1m|\x1b[0m\r");
+        move_cursor(i, col_width + start_col);
+        print!("\x1b[1m|\x1b[0m\r");
+        flush_stdout();
+    }
+
     async fn run(&mut self, sender: mpsc::Sender<()>, mut receiver: mpsc::Receiver<()>) {
         self.load_videos_from_cache().await;
         self.start = 0;
@@ -1622,7 +1689,7 @@ impl YoutubeSubscribtions {
                 self.help();
             }
             self.handle_resize();
-            print_selector(self.i, self.col_width);
+            self.print_selector(self.i, self.col_width);
             let input = input();
             let result;
             {
@@ -1668,15 +1735,15 @@ impl YoutubeSubscribtions {
                                         let _ = self.current_thumbnail_to_thumbnail_jpg().await;
                                     }
                                     Char('g') | Char('H') => {
-                                        self.i = jump(self.i, 0, self.col_width);
+                                        self.jump(0);
                                         let _ = self.current_thumbnail_to_thumbnail_jpg().await;
                                     }
                                     Char('M') => {
-                                        self.i = jump(self.i, self.n / 2, self.col_width);
+                                        self.jump(self.n / 2);
                                         let _ = self.current_thumbnail_to_thumbnail_jpg().await;
                                     }
                                     Char('G') | Char('L') => {
-                                        self.i = jump(self.i, self.n - 1, self.col_width);
+                                        self.jump(self.n - 1);
                                         let _ = self.current_thumbnail_to_thumbnail_jpg().await;
                                     }
                                     Char('r') | Char('$') | Left => self.soft_reload().await,
@@ -1705,6 +1772,11 @@ impl YoutubeSubscribtions {
                                     Char('n') => self.search_next(),
                                     Char(':') => self.command(),
                                     Char('y') => self.yank_video_uri(),
+                                    Char('s') => {
+                                        self.app_config.split_thumbnail =
+                                            !self.app_config.split_thumbnail;
+                                        self.clear_and_print_videos();
+                                    }
                                     Char('f') | Char('|') => self.filter(),
                                     _ => self
                                         .debug(&"key not supported (press h for help)".to_string()),
@@ -1722,7 +1794,7 @@ impl YoutubeSubscribtions {
                             if self.i == new_i {
                                 self.play_current(false);
                             } else {
-                                self.i = jump(self.i, new_i, self.col_width);
+                                self.jump(new_i);
                             }
                         }
                         MouseEvent::Press(MouseButton::WheelUp, _x, _y) => self.up(),
