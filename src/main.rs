@@ -61,6 +61,10 @@ fn default_content() -> Option<String> {
     None
 }
 
+fn youtube_base_url() -> String {
+    "https://www.youtube.com/".to_string()
+}
+
 fn default_kind_symbols() -> HashMap<String, String> {
     let mut symbols: HashMap<String, String> = HashMap::new();
     symbols.insert("Audio".to_string(), "a".to_string());
@@ -90,6 +94,7 @@ struct AppConfig {
     sort: String,
     auto_thumbnail_path: Option<String>,
     split_thumbnail: bool,
+    youtube_instance: String,
 }
 
 impl Default for AppConfig {
@@ -138,6 +143,7 @@ impl Default for AppConfig {
             sort: "desc".to_string(),
             auto_thumbnail_path: None,
             split_thumbnail: false,
+            youtube_instance: youtube_base_url(),
         }
     }
 }
@@ -1316,7 +1322,9 @@ impl YoutubeSubscribtions {
 
     fn open_current(&mut self) {
         if self.i < self.toshow.len() {
-            let url = &self.toshow[self.i].url;
+            let url = &self.toshow[self.i]
+                .url
+                .replace(&youtube_base_url(), &self.app_config.youtube_instance);
             self.debug(&format!("opening {}", &url));
             let _res = webbrowser::open(&url);
             self.flag(&Some(Flag::Read));
@@ -1423,23 +1431,14 @@ impl YoutubeSubscribtions {
         if app_config.mpv_mode && fs::metadata(&app_config.mpv_path).is_ok() {
             let message = format!("playing {} with mpv...", url);
             self.debug(&message);
-            clear();
-            match Command::new(&app_config.mpv_path)
+            let _ = Command::new(&app_config.mpv_path)
                 .args(&app_config.player_additional_opts)
                 .arg(if no_video { "--no-video" } else { "" })
                 .arg(if app_config.fs { "-fs" } else { "" })
                 .arg("--ytdl-format=".to_owned() + &app_config.youtubedl_format)
+                .arg("--no-terminal")
                 .arg(&url)
-                .spawn()
-            {
-                Ok(mut child) => match child.wait() {
-                    Ok(_) => {}
-                    Err(e) => {
-                        self.debug(&format!("{}", e));
-                    }
-                },
-                _ => {}
-            };
+                .spawn();
         } else {
             clear();
             match kind {
@@ -1474,7 +1473,6 @@ impl YoutubeSubscribtions {
                 self.play_url(&s[1].to_string(), &ItemKind::Video, &self.app_config, false)
             }
         }
-        self.clear_and_print_videos()
     }
 
     fn yank_video_uri(&mut self) {

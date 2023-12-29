@@ -169,9 +169,9 @@ dependencies = [
 
 [[package]]
 name = "blockish"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "965e43b365c54d3a90dba3823ba927b83741dc02c6d143f71afb49ade3dc503c"
+checksum = "0364664e0f3be55256c6792f853fe5337cc63198da8047b40ece663ca890d4e1"
 dependencies = [
  "clap",
  "image",
@@ -3106,7 +3106,7 @@ name = "youtube-subscriptions"
 version = "0.2.79"
 dependencies = [
  "base64",
- "blockish 1.0.0",
+ "blockish 1.0.1",
  "blockish-caca",
  "blockish-player",
  "cfonts",
