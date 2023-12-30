@@ -69,6 +69,7 @@ example:
   "video_path": "__HOME/.cache/yts/videos",
   "cache_path": "__HOME/.cache/yts/yts.json",
   "youtubedl_format": "[height <=? 360][ext = mp4]",
+  "youtube_instance": "https://invidious.privacydev.net/",
   "video_extension": "mp4",
   "kind_symbols": {
     "Audio": "ﱘ",
@@ -93,6 +94,7 @@ example:
 | blockish_player     | [blockish player](https://github.com/yazgoo/blockish-player) to use (supersedes players)            | None
 | players             | list of players command for videos in order of priority                                             |
 | youtubedl_format    | see [youtube-dl doc](https://github.com/ytdl-org/youtube-dl/blob/master/README.md#format-selection) | `[height <=? 360][ext = mp4]`
+| youtube_instance    | invidious / youtube instance to use to open videos                                                  | https://www.youtube.com/   |
 | video_extension     | youtube-dl video extension as per format                                                            | `mp4`
 | kind_symbols        | hash of characters to describe the media                                                            | `{ "Audio": "a", "Video": "v", "Magnet": "m", "Other": "o"  }`
 | channel_ids         | list of additional channel ids which will be also fetched                                           | `[]`

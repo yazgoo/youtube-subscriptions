@@ -23,6 +23,7 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm_input::KeyEvent::{self, Char, Ctrl, Down, Left, Right, Up};
 use crossterm_input::{input, InputEvent, MouseButton, MouseEvent, RawScreen};
 use futures::future::join_all;
+use notify_rust::Notification;
 use percent_encoding::percent_decode;
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_ENCODING, ETAG, IF_NONE_MATCH};
@@ -1260,7 +1261,13 @@ impl YoutubeSubscribtions {
             None => self.debug("could not load videos"),
         }
         self.debug(&"".to_string());
-        self.debug(&format!("reload took {} ms", now.elapsed().as_millis()).to_string());
+        let msg = format!("✅ reload took {} ms", now.elapsed().as_millis()).to_string();
+        self.debug(&msg);
+        let _ = Notification::new()
+            .summary("youtube-subscriptions reload")
+            .body(&msg)
+            .icon("computer")
+            .show();
     }
 
     fn first_page(&mut self) {
