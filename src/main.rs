@@ -30,13 +30,13 @@ use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_ENCODING, ETAG, IF_NONE_MAT
 use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::collections::HashMap;
-use std::fs;
 use std::fs::File;
+use std::fs::{self, OpenOptions};
 use std::io;
 use std::io::ErrorKind::NotFound;
 use std::io::{BufReader, Read, Write};
 use std::process::{Command, Stdio};
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::mpsc;
 use utf8::BufReadDecoder;
 
@@ -58,6 +58,14 @@ impl From<reqwest::Error> for CustomError {
     }
 }
 
+fn notify(msg: &str) {
+    let _ = Notification::new()
+        .summary("youtube-subscriptions")
+        .body(&msg)
+        .icon("computer")
+        .show();
+}
+
 fn default_content() -> Option<String> {
     None
 }
@@ -70,6 +78,7 @@ fn default_kind_symbols() -> HashMap<String, String> {
     let mut symbols: HashMap<String, String> = HashMap::new();
     symbols.insert("Audio".to_string(), "a".to_string());
     symbols.insert("Video".to_string(), "v".to_string());
+    symbols.insert("Short".to_string(), "s".to_string());
     symbols.insert("Other".to_string(), "o".to_string());
     symbols.insert("Magnet".to_string(), "m".to_string());
     symbols
@@ -96,6 +105,7 @@ struct AppConfig {
     auto_thumbnail_path: Option<String>,
     split_thumbnail: bool,
     youtube_instance: String,
+    short_check_backward_days: usize,
 }
 
 impl Default for AppConfig {
@@ -145,6 +155,7 @@ impl Default for AppConfig {
             auto_thumbnail_path: None,
             split_thumbnail: false,
             youtube_instance: youtube_base_url(),
+            short_check_backward_days: 1,
         }
     }
 }
@@ -233,6 +244,7 @@ enum ItemKind {
     Audio,
     Other,
     Magnet,
+    Short,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -275,6 +287,55 @@ macro_rules! get_decendant_node {
     };
 }
 
+fn log(msg: &str) {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open("/tmp/youtube-subscriptions.log")
+        .unwrap();
+    _ = writeln!(file, "{}", msg);
+}
+
+fn check_if_short(url: &str, published: &str) -> Option<bool> {
+    match DateTime::parse_from_rfc3339(published) {
+        Ok(x) => {
+            let now = chrono::offset::Local::now();
+            let duration = now.signed_duration_since(x);
+            let days = duration.num_days();
+            if days <= 1 {
+                // check if it is a youtube video
+                if url.contains("youtube.com") {
+                    let video_id = url.split("v=").collect::<Vec<&str>>()[1];
+                    let short_url = format!("https://www.youtube.com/shorts/{}", video_id);
+                    // query url headers, check if 200
+                    log(&format!("check {:?}", short_url));
+                    // do a reqwest blocking query with a timeout of 200ms
+                    reqwest::blocking::Client::builder()
+                        .build()
+                        .unwrap()
+                        .head(short_url.as_str())
+                        .send()
+                        .and_then(|response| {
+                            if response.status().is_success() {
+                                log(&format!("{:?} {:?}", short_url, true));
+                                Ok(true)
+                            } else {
+                                log(&format!("{:?} {:?}", short_url, false));
+                                Ok(false)
+                            }
+                        })
+                        .ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+        Err(_) => None,
+    }
+}
+
 fn entry_to_item_rss(title: &String, channel_url: &str, entry: roxmltree::Node) -> Item {
     let mut kind = ItemKind::Other;
     let url = get_decendant_node!(entry, "link")
@@ -300,6 +361,7 @@ fn entry_to_item_rss(title: &String, channel_url: &str, entry: roxmltree::Node) 
     let content = get_decendant_node!(group, "content")
         .text()
         .map(|x| x.to_string());
+    // let kind = check_if_short(url, video_published).map_or(kind, |_| ItemKind::Short);
     Item {
         kind,
         content,
@@ -345,6 +407,7 @@ fn entry_to_item_atom(title: &str, channel_url: &str, entry: roxmltree::Node) ->
     let content = get_decendant_node!(entry, "encoded")
         .text()
         .map(|x| x.to_string());
+    // let kind = check_if_short(url, video_published).map_or(kind, |_| ItemKind::Short);
     Item {
         kind,
         content,
@@ -876,6 +939,7 @@ impl YoutubeSubscribtions {
         additional_channel_ids: &[String],
         additional_channel_urls: &[String],
         original_videos: &Items,
+        client: &reqwest::Client,
     ) -> Vec<Option<ChanelItems>> {
         match roxmltree::Document::parse(xml.as_str()) {
             Ok(document) => {
@@ -887,37 +951,24 @@ impl YoutubeSubscribtions {
                     .map(|x| x.to_string())
                     .collect::<Vec<String>>();
                 let urls_from_additional = additional_channel_ids.iter().map(|id| {
-                    "https://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id
+                    // http is faster than https
+                    "http://www.youtube.com/feeds/videos.xml?channel_id=".to_string() + id
                 });
                 let urls_from_additional_2 =
                     additional_channel_urls.iter().map(|url| url.to_string());
                 urls_from_xml.extend(urls_from_additional);
                 urls_from_xml.extend(urls_from_additional_2);
-                match reqwest::Client::builder().use_rustls_tls().build() {
-                    Ok(client) => {
-                        let futs: Vec<_> = urls_from_xml
-                            .iter()
-                            .map(|url| {
-                                let etag = match original_videos.channel_etags.get(&url.to_string())
-                                {
-                                    Some(Some(string)) => Some(string),
-                                    _ => None,
-                                };
-                                self.get_channel_videos(
-                                    &client,
-                                    url.to_string(),
-                                    etag,
-                                    &original_videos,
-                                )
-                            })
-                            .collect();
-                        join_all(futs).await
-                    }
-                    Err(e) => {
-                        self.debug(&format!("failed instantiating client {}", e));
-                        vec![None]
-                    }
-                }
+                let futs: Vec<_> = urls_from_xml
+                    .iter()
+                    .map(|url| {
+                        let etag = match original_videos.channel_etags.get(&url.to_string()) {
+                            Some(Some(string)) => Some(string),
+                            _ => None,
+                        };
+                        self.get_channel_videos(&client, url.to_string(), etag, &original_videos)
+                    })
+                    .collect();
+                join_all(futs).await
             }
             Err(e) => {
                 self.debug(&format!("failed parsing xml {}", e));
@@ -971,12 +1022,15 @@ impl YoutubeSubscribtions {
                 Err(e) if i == (max_tries - 1) => {
                     self.debug(&format!("🔴 failed loading {}: {}", &channel_url, e))
                 }
-                Err(e) => self.debug(&format!(
-                    "🟠 retrying after fail #{} for {}: {:?}",
-                    i,
-                    &channel_url,
-                    e.status()
-                )),
+                Err(e) => {
+                    self.debug(&format!(
+                        "🟠 retrying after fail #{} for {}: {:?}",
+                        i,
+                        &channel_url,
+                        e.status()
+                    ));
+                    // one liner to log (tail) previous line in a file:
+                }
             }
             let dur = std::time::Duration::from_millis(i * 100);
             std::thread::sleep(dur);
@@ -997,12 +1051,15 @@ impl YoutubeSubscribtions {
                     let mut one_query_failed = false;
                     let empty_vec = vec![];
                     let mut etags: ChannelEtags = HashMap::new();
+
+                    let client = reqwest::Client::builder().use_rustls_tls().build().unwrap();
                     let vids = self
                         .get_videos(
                             xml,
                             &app_config.channel_ids,
                             &app_config.channel_urls,
                             &original_videos,
+                            &client,
                         )
                         .await
                         .iter()
@@ -1258,16 +1315,16 @@ impl YoutubeSubscribtions {
         self.debug(&"updating video list...".to_string());
         match self.load(true, &self.app_config, &self.videos).await {
             Some(videos) => self.videos = videos,
-            None => self.debug("could not load videos"),
+            None => {
+                let msg = format!("🔴 could not load videos");
+                self.debug(&msg);
+                notify(&msg);
+            }
         }
         self.debug(&"".to_string());
         let msg = format!("✅ reload took {} ms", now.elapsed().as_millis()).to_string();
         self.debug(&msg);
-        let _ = Notification::new()
-            .summary("youtube-subscriptions reload")
-            .body(&msg)
-            .icon("computer")
-            .show();
+        notify(&msg);
     }
 
     fn first_page(&mut self) {
@@ -1327,11 +1384,15 @@ impl YoutubeSubscribtions {
         Ok(())
     }
 
-    fn open_current(&mut self) {
+    fn open_current(&mut self, channel: bool) {
         if self.i < self.toshow.len() {
-            let url = &self.toshow[self.i]
-                .url
-                .replace(&youtube_base_url(), &self.app_config.youtube_instance);
+            let item = &self.toshow[self.i];
+            let base_url = if channel {
+                &item.channel_url
+            } else {
+                &item.url
+            };
+            let url = base_url.replace(&youtube_base_url(), &self.app_config.youtube_instance);
             self.debug(&format!("opening {}", &url));
             let _res = webbrowser::open(&url);
             self.flag(&Some(Flag::Read));
@@ -1772,7 +1833,8 @@ impl YoutubeSubscribtions {
                                     },
                                     Char('p') | KeyEvent::Enter => self.play_current(false),
                                     Char('a') => self.play_current(true),
-                                    Char('o') => self.open_current(),
+                                    Char('o') => self.open_current(false),
+                                    Char('O') => self.open_current(true),
                                     Char('/') => self.search(),
                                     Char('n') => self.search_next(),
                                     Char(':') => self.command(),
@@ -1839,7 +1901,7 @@ async fn hard_reload_bg(sender: mpsc::Sender<()>) {
     let _ = sender.send(()).await;
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 100)]
 async fn main() {
     let _ = ctrlc::set_handler(move || {
         quit();
